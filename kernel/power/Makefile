@@ -11,6 +11,7 @@ obj-$(CONFIG_OPPORTUNISTIC_SUSPEND)	+= opportunistic_suspend.o
 obj-$(CONFIG_USER_SUSPEND_BLOCKERS)	+= user_suspend_blocker.o
 obj-$(CONFIG_EARLYSUSPEND)	+= earlysuspend.o
 obj-$(CONFIG_CONSOLE_EARLYSUSPEND)	+= consoleearlysuspend.o
+obj-$(CONFIG_FB_EARLYSUSPEND)	+= fbearlysuspend.o
 obj-$(CONFIG_PM_TEST_SUSPEND)	+= suspend_test.o
 obj-$(CONFIG_HIBERNATION)	+= hibernate.o snapshot.o swap.o user.o
 obj-$(CONFIG_HIBERNATION_NVS)	+= hibernate_nvs.o
