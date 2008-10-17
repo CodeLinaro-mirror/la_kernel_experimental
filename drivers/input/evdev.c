@@ -20,6 +20,7 @@
 #include <linux/input.h>
 #include <linux/major.h>
 #include <linux/device.h>
+#include <linux/suspend.h>
 #include "input-compat.h"
 
 struct evdev {
@@ -43,6 +44,8 @@ struct evdev_client {
 	struct fasync_struct *fasync;
 	struct evdev *evdev;
 	struct list_head node;
+	struct suspend_blocker suspend_blocker;
+	bool use_suspend_blocker;
 };
 
 static struct evdev *evdev_table[EVDEV_MINORS];
@@ -55,6 +58,8 @@ static void evdev_pass_event(struct evdev_client *client,
 	 * Interrupts are disabled, just acquire the lock
 	 */
 	spin_lock(&client->buffer_lock);
+	if (client->use_suspend_blocker)
+		suspend_block(&client->suspend_blocker);
 	client->buffer[client->head++] = *event;
 	client->head &= EVDEV_BUFFER_SIZE - 1;
 	spin_unlock(&client->buffer_lock);
@@ -234,6 +239,8 @@ static int evdev_release(struct inode *inode, struct file *file)
 	mutex_unlock(&evdev->mutex);
 
 	evdev_detach_client(evdev, client);
+	if (client->use_suspend_blocker)
+		suspend_blocker_unregister(&client->suspend_blocker);
 	kfree(client);
 
 	evdev_close_device(evdev);
@@ -335,6 +342,8 @@ static int evdev_fetch_next_event(struct evdev_client *client,
 	if (have_event) {
 		*event = client->buffer[client->tail++];
 		client->tail &= EVDEV_BUFFER_SIZE - 1;
+		if (client->use_suspend_blocker && client->head == client->tail)
+			suspend_unblock(&client->suspend_blocker);
 	}
 
 	spin_unlock_irq(&client->buffer_lock);
@@ -584,6 +593,19 @@ static long evdev_do_ioctl(struct file *file, unsigned int cmd,
 			return evdev_grab(evdev, client);
 		else
 			return evdev_ungrab(evdev, client);
+
+	case EVIOCGSUSPENDBLOCK:
+		return put_user(client->use_suspend_blocker, ip);
+
+	case EVIOCSSUSPENDBLOCK:
+		spin_lock_irq(&client->buffer_lock);
+		if (!client->use_suspend_blocker && p)
+			suspend_blocker_init(&client->suspend_blocker, "evdev");
+		else if (client->use_suspend_blocker && !p)
+			suspend_blocker_unregister(&client->suspend_blocker);
+		client->use_suspend_blocker = !!p;
+		spin_unlock_irq(&client->buffer_lock);
+		return 0;
 
 	default:
 
