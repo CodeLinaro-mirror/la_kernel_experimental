@@ -14,6 +14,7 @@ endif
 
 obj-$(CONFIG_ARCH_QSD8X50) += sirc.o
 obj-$(CONFIG_MSM_FIQ_SUPPORT) += fiq_glue.o
+obj-$(CONFIG_MACH_TROUT) += board-trout-rfkill.o
 obj-$(CONFIG_MSM_SMD) += smd.o smd_tty.o smd_qmi.o
 obj-$(CONFIG_MSM_ONCRPCROUTER) += smd_rpcrouter.o
 obj-$(CONFIG_MSM_ONCRPCROUTER) += smd_rpcrouter_device.o
