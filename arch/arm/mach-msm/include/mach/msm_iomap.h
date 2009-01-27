@@ -43,12 +43,19 @@
 #define IOMEM(x)	((void __force __iomem *)(x))
 #endif
 
+#if defined(CONFIG_ARCH_MSM_ARM11)
+#define _PHYS(a11,scorp) (a11)
+#endif
+#if defined(CONFIG_ARCH_MSM_SCORPION)
+#define _PHYS(a11,scorp) (scorp)
+#endif
+
 #define MSM_VIC_BASE          IOMEM(0xE0000000)
-#define MSM_VIC_PHYS          0xC0000000
+#define MSM_VIC_PHYS          _PHYS(0xC0000000,0xAC000000)
 #define MSM_VIC_SIZE          SZ_4K
 
 #define MSM_CSR_BASE          IOMEM(0xE0001000)
-#define MSM_CSR_PHYS          0xC0100000
+#define MSM_CSR_PHYS          _PHYS(0xC0100000,0xAC100000)
 #define MSM_CSR_SIZE          SZ_4K
 
 #define MSM_GPT_PHYS          MSM_CSR_PHYS
@@ -60,11 +67,11 @@
 #define MSM_DMOV_SIZE         SZ_4K
 
 #define MSM_GPIO1_BASE        IOMEM(0xE0003000)
-#define MSM_GPIO1_PHYS        0xA9200000
+#define MSM_GPIO1_PHYS        _PHYS(0xA9200000,0xA9000000)
 #define MSM_GPIO1_SIZE        SZ_4K
 
 #define MSM_GPIO2_BASE        IOMEM(0xE0004000)
-#define MSM_GPIO2_PHYS        0xA9300000
+#define MSM_GPIO2_PHYS        _PHYS(0xA9300000,0xA9100000)
 #define MSM_GPIO2_SIZE        SZ_4K
 
 #define MSM_CLK_CTL_BASE      IOMEM(0xE0005000)
@@ -83,19 +90,6 @@
 
 #define MSM_UART3_PHYS        0xA9C00000
 #define MSM_UART3_SIZE        SZ_4K
-
-#ifdef CONFIG_MSM_DEBUG_UART
-#define MSM_DEBUG_UART_BASE   0xE1000000
-#if CONFIG_MSM_DEBUG_UART == 1
-#define MSM_DEBUG_UART_PHYS   MSM_UART1_PHYS
-#elif CONFIG_MSM_DEBUG_UART == 2
-#define MSM_DEBUG_UART_PHYS   MSM_UART2_PHYS
-#elif CONFIG_MSM_DEBUG_UART == 3
-#define MSM_DEBUG_UART_PHYS   MSM_UART3_PHYS
-#endif
-#define MSM_DEBUG_UART_SIZE   SZ_4K
-#endif
-
 
 #define MSM_SDC1_PHYS         0xA0400000
 #define MSM_SDC1_SIZE         SZ_4K
@@ -143,5 +137,28 @@
 #define MSM_TSSC_BASE         IOMEM(0xE1005000)
 #define MSM_TSSC_PHYS         0xAA300000
 #define MSM_TSSC_SIZE         SZ_4K
+
+#if defined(CONFIG_ARCH_MSM_SCORPION)
+#define MSM_SIRC_BASE         IOMEM(0xE0006000)
+#define MSM_SIRC_PHYS         0xAC200000
+#define MSM_SIRC_SIZE         SZ_4K
+
+#define MSM_SCPLL_BASE        IOMEM(0xE1007000)
+#define MSM_SCPLL_PHYS        0xA8800000
+#define MSM_SCPLL_SIZE        SZ_4K 
+#endif
+
+
+#ifdef CONFIG_MSM_DEBUG_UART
+#define MSM_DEBUG_UART_BASE   0xE1000000
+#if CONFIG_MSM_DEBUG_UART == 1
+#define MSM_DEBUG_UART_PHYS   MSM_UART1_PHYS
+#elif CONFIG_MSM_DEBUG_UART == 2
+#define MSM_DEBUG_UART_PHYS   MSM_UART2_PHYS
+#elif CONFIG_MSM_DEBUG_UART == 3
+#define MSM_DEBUG_UART_PHYS   MSM_UART3_PHYS
+#endif
+#define MSM_DEBUG_UART_SIZE   SZ_4K
+#endif
 
 #endif
