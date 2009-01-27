@@ -481,10 +481,19 @@ static void msm_init_clock(struct uart_port *port)
 	msm_port->clk_state = MSM_CLK_ON;
 #endif
 
+#ifdef CONFIG_ARCH_MSM_SCORPION
+	/* proc_comm bug is causing UART clock to be TCXO */
+	msm_write(port, 0x06, UART_MREG);
+	msm_write(port, 0xF1, UART_NREG);
+	msm_write(port, 0x0F, UART_DREG);
+	msm_write(port, 0x1A, UART_MNDREG);
+#else
+	/* UART clock is TCXO/4 */
 	msm_write(port, 0xC0, UART_MREG);
 	msm_write(port, 0xB2, UART_NREG);
 	msm_write(port, 0x7D, UART_DREG);
 	msm_write(port, 0x1C, UART_MNDREG);
+#endif
 }
 
 static int msm_startup(struct uart_port *port)
