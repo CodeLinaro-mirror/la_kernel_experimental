@@ -23,6 +23,7 @@ obj-$(CONFIG_PM) += pm.o
 obj-$(CONFIG_MSM_CPU_FREQ) += cpufreq.o
 
 obj-$(CONFIG_MACH_HALIBUT) += board-halibut.o board-halibut-keypad.o
+obj-$(CONFIG_MACH_SWORDFISH) += board-swordfish.o
 obj-$(CONFIG_MACH_TROUT) += board-trout.o board-trout-gpio.o
 obj-$(CONFIG_MACH_TROUT) += board-trout-keypad.o board-trout-panel.o
 obj-$(CONFIG_MACH_TROUT) += htc_akm_cal.o htc_wifi_nvs.o htc_acoustic.o
