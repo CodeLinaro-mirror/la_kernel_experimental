@@ -24,6 +24,7 @@
 #define CLKFLAG_USE_MIN_TO_SET		(0x00000004)
 
 #define CLKFLAG_ARCH_MSM7X00A		(0x00010000)
+#define CLKFLAG_ARCH_QSD8X50		(0x00020000)
 #define CLKFLAG_ARCH_ALL		(0xffff0000)
 
 struct clk {
@@ -83,8 +84,11 @@ struct clk {
 #define VDC_CLK		39  /* Video controller clock */
 #define VFE_CLK		40  /* Camera / Video Front End clock */
 #define VFE_MDC_CLK	41  /* VFE MDDI client clock */
+#define LCDC_PCLK	42
+#define LCDC_PAD_PCLK	43
+#define MDP_VSYNC_CLK	44
 
-#define NR_CLKS		42
+#define NR_CLKS		45
 
 extern struct clk msm_clocks[];
 
