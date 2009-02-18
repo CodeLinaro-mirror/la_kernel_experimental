@@ -155,6 +155,13 @@ config LEDS_LP5521
 	  This driver can be built as a module by choosing 'M'. The module
 	  will be called leds-lp5521.
 
+config LEDS_CPLD
+	tristate "LED Support for CPLD connected LEDs"
+	default y
+	depends on LEDS_CLASS
+	help
+	  This option enables support for the LEDs connected to CPLD
+
 config LEDS_CLEVO_MAIL
 	tristate "Mail LED on Clevo notebook"
 	depends on LEDS_CLASS && X86 && SERIO_I8042 && DMI
