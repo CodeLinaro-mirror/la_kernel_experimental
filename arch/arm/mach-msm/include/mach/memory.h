@@ -16,7 +16,11 @@
 #define __ASM_ARCH_MEMORY_H
 
 /* physical offset of RAM */
+#if defined(CONFIG_ARCH_QSD8X50)
+#define PHYS_OFFSET		UL(0x12000000)
+#else
 #define PHYS_OFFSET		UL(0x10000000)
+#endif
 
 /* bus address and physical addresses are identical */
 #define __virt_to_bus(x)	__virt_to_phys(x)
