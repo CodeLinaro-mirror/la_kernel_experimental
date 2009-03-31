@@ -29,6 +29,7 @@
 #include <mach/board.h>
 #include <mach/msm_iomap.h>
 #include <mach/msm_hsusb.h>
+#include <mach/msm_ts.h>
 
 #ifdef CONFIG_USB_FUNCTION_MASS_STORAGE
 #include <linux/usb/mass_storage_function.h>
@@ -145,6 +146,17 @@ static struct platform_device fish_battery_device = {
 	.name = "fish_battery",
 };
 
+static struct msm_ts_platform_data swordfish_ts_pdata = {
+	.min_x		= 296,
+	.max_x		= 3800,
+	.min_y		= 296,
+	.max_y		= 3800,
+	.min_press	= 0,
+	.max_press	= 256,
+	.inv_x		= 4096,
+	.inv_y		= 4096,
+};
+
 static struct platform_device *devices[] __initdata = {
 	&msm_device_uart3,
 	&msm_device_smd,
@@ -158,6 +170,7 @@ static struct platform_device *devices[] __initdata = {
 #endif
 	&fish_battery_device,
 	&smc91x_device,
+	&msm_device_touchscreen,
 };
 
 extern struct sys_timer msm_timer;
@@ -174,6 +187,7 @@ static void __init swordfish_init(void)
 {
 	msm_acpu_clock_init(&swordfish_clock_data);
 	msm_device_hsusb.dev.platform_data = &msm_hsusb_pdata;
+	msm_device_touchscreen.dev.platform_data = &swordfish_ts_pdata;
 	platform_add_devices(devices, ARRAY_SIZE(devices));
 	msm_hsusb_set_vbus_state(1);
 }
