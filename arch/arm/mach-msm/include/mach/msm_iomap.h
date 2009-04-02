@@ -95,17 +95,22 @@
 #define MSM_UART3_PHYS        0xA9C00000
 #define MSM_UART3_SIZE        SZ_4K
 
-#define MSM_SDC1_PHYS         0xA0400000
 #define MSM_SDC1_SIZE         SZ_4K
-
-#define MSM_SDC2_PHYS         0xA0500000
 #define MSM_SDC2_SIZE         SZ_4K
-
-#define MSM_SDC3_PHYS         0xA0600000
 #define MSM_SDC3_SIZE         SZ_4K
-
-#define MSM_SDC4_PHYS         0xA0700000
 #define MSM_SDC4_SIZE         SZ_4K
+
+#if defined(CONFIG_ARCH_QSD8X50)
+#define MSM_SDC1_PHYS         0xA0300000
+#define MSM_SDC2_PHYS         0xA0400000
+#define MSM_SDC3_PHYS         0xA0500000
+#define MSM_SDC4_PHYS         0xA0600000
+#else
+#define MSM_SDC1_PHYS         0xA0400000
+#define MSM_SDC2_PHYS         0xA0500000
+#define MSM_SDC3_PHYS         0xA0600000
+#define MSM_SDC4_PHYS         0xA0700000
+#endif
 
 #define MSM_I2C_PHYS          0xA9900000
 #define MSM_I2C_SIZE          SZ_4K
