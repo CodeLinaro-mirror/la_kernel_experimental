@@ -12,6 +12,7 @@
 #include <linux/string.h>
 #include <linux/resume-trace.h>
 #include <linux/workqueue.h>
+#include <linux/suspend_blocker.h>
 
 #include "power.h"
 
@@ -178,6 +179,61 @@ static ssize_t state_store(struct kobject *kobj, struct kobj_attribute *attr,
 
 power_attr(state);
 
+/**
+ *	request_state - control system power state.
+ *
+ *	This is similar to state, but it does not block until the system
+ *	resumes, and it will try to re-enter the state until another state is
+ *	requested. Suspend blockers are respected and the requested state will
+ *	only be entered when no suspend blockers are active.
+ *	Write "on" to cancel.
+ */
+
+#ifdef CONFIG_SUSPEND_BLOCKERS
+static ssize_t request_state_show(struct kobject *kobj,
+				  struct kobj_attribute *attr, char *buf)
+{
+	char *s = buf;
+	int i;
+
+	for (i = 0; i < PM_SUSPEND_MAX; i++) {
+		if (pm_states[i] && (i == PM_SUSPEND_ON || valid_state(i)))
+			s += sprintf(s, "%s ", pm_states[i]);
+	}
+	if (s != buf)
+		/* convert the last space to a newline */
+		*(s-1) = '\n';
+	return (s - buf);
+}
+
+static ssize_t request_state_store(struct kobject *kobj,
+				   struct kobj_attribute *attr,
+				   const char *buf, size_t n)
+{
+	suspend_state_t state = PM_SUSPEND_ON;
+	const char * const *s;
+	char *p;
+	int len;
+	int error = -EINVAL;
+
+	p = memchr(buf, '\n', n);
+	len = p ? p - buf : n;
+
+	for (s = &pm_states[state]; state < PM_SUSPEND_MAX; s++, state++) {
+		if (*s && len == strlen(*s) && !strncmp(buf, *s, len))
+			break;
+	}
+	if (state < PM_SUSPEND_MAX && *s)
+		if (state == PM_SUSPEND_ON || valid_state(state)) {
+			error = 0;
+			request_suspend_state(state);
+		}
+	return error ? error : n;
+}
+
+power_attr(request_state);
+#endif /* CONFIG_SUSPEND_BLOCKERS */
+
 #ifdef CONFIG_PM_TRACE
 int pm_trace_enabled;
 
@@ -205,6 +261,9 @@ power_attr(pm_trace);
 
 static struct attribute * g[] = {
 	&state_attr.attr,
+#ifdef CONFIG_SUSPEND_BLOCKERS
+	&request_state_attr.attr,
+#endif
 #ifdef CONFIG_PM_TRACE
 	&pm_trace_attr.attr,
 #endif

@@ -236,3 +236,7 @@ static inline void suspend_thaw_processes(void)
 {
 }
 #endif
+
+/* kernel/power/suspend_block.c */
+void request_suspend_state(suspend_state_t state);
+
