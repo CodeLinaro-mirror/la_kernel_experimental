@@ -146,6 +146,14 @@ config OPPORTUNISTIC_SUSPEND
 	  determines the sleep state the system will be put into when there are
 	  no active suspend blockers.
 
+config SUSPEND_BLOCKER_STATS
+	bool "Suspend blockers statistics"
+	depends on OPPORTUNISTIC_SUSPEND
+	default y
+	---help---
+	  Use /sys/kernel/debug/suspend_blockers to report suspend blockers
+	  statistics.
+
 config USER_SUSPEND_BLOCKERS
 	bool "User space suspend blockers"
 	depends on OPPORTUNISTIC_SUSPEND

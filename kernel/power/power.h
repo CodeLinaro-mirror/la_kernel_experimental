@@ -245,3 +245,8 @@ extern void __init opportunistic_suspend_init(void);
 #else
 static inline void opportunistic_suspend_init(void) {}
 #endif
+#ifdef CONFIG_SUSPEND_BLOCKER_STATS
+void about_to_enter_suspend(void);
+#else
+static inline void about_to_enter_suspend(void) {}
+#endif
