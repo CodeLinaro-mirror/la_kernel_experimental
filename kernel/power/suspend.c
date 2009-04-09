@@ -158,8 +158,10 @@ static int suspend_enter(suspend_state_t state)
 
 	error = sysdev_suspend(PMSG_SUSPEND);
 	if (!error) {
-		if (!suspend_is_blocked() && !suspend_test(TEST_CORE))
+		if (!suspend_is_blocked() && !suspend_test(TEST_CORE)) {
+			about_to_enter_suspend();
 			error = suspend_ops->enter(state);
+		}
 		sysdev_resume();
 	}
 

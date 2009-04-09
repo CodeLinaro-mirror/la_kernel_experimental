@@ -39,6 +39,7 @@ module_param_named(unknown_wakeup_delay_msecs, unknown_wakeup_delay_msecs, int,
 
 #define SB_INITIALIZED            (1U << 8)
 #define SB_ACTIVE                 (1U << 9)
+#define SB_PREVENTING_SUSPEND     (1U << 10)
 
 DEFINE_SUSPEND_BLOCKER(main_suspend_blocker, main);
 
@@ -50,6 +51,117 @@ static int current_event_num;
 static suspend_state_t requested_suspend_state = PM_SUSPEND_MEM;
 static bool enable_suspend_blockers;
 static DEFINE_SUSPEND_BLOCKER(unknown_wakeup, unknown_wakeups);
+
+#ifdef CONFIG_SUSPEND_BLOCKER_STATS
+static struct suspend_blocker_stats dropped_suspend_blockers;
+static ktime_t last_sleep_time_update;
+static bool wait_for_wakeup;
+
+static void suspend_blocker_stat_init(struct suspend_blocker_stats *stat)
+{
+	stat->count = 0;
+	stat->wakeup_count = 0;
+	stat->total_time = ktime_set(0, 0);
+	stat->prevent_suspend_time = ktime_set(0, 0);
+	stat->max_time = ktime_set(0, 0);
+	stat->last_time = ktime_set(0, 0);
+}
+
+static void init_dropped_suspend_blockers(void)
+{
+	suspend_blocker_stat_init(&dropped_suspend_blockers);
+}
+
+static void suspend_blocker_stat_drop(struct suspend_blocker_stats *stat)
+{
+	if (!stat->count)
+		return;
+
+	dropped_suspend_blockers.count += stat->count;
+	dropped_suspend_blockers.total_time = ktime_add(
+		dropped_suspend_blockers.total_time, stat->total_time);
+	dropped_suspend_blockers.prevent_suspend_time = ktime_add(
+		dropped_suspend_blockers.prevent_suspend_time,
+		stat->prevent_suspend_time);
+	dropped_suspend_blockers.max_time = ktime_add(
+		dropped_suspend_blockers.max_time, stat->max_time);
+}
+
+static void suspend_unblock_stat(struct suspend_blocker *blocker)
+{
+	struct suspend_blocker_stats *stat = &blocker->stat;
+	ktime_t duration;
+	ktime_t now;
+
+	if (!(blocker->flags & SB_ACTIVE))
+		return;
+
+	now = ktime_get();
+	stat->count++;
+	duration = ktime_sub(now, stat->last_time);
+	stat->total_time = ktime_add(stat->total_time, duration);
+	if (ktime_to_ns(duration) > ktime_to_ns(stat->max_time))
+		stat->max_time = duration;
+
+	stat->last_time = ktime_get();
+	if (blocker->flags & SB_PREVENTING_SUSPEND) {
+		duration = ktime_sub(now, last_sleep_time_update);
+		stat->prevent_suspend_time = ktime_add(
+			stat->prevent_suspend_time, duration);
+		blocker->flags &= ~SB_PREVENTING_SUSPEND;
+	}
+}
+
+static void suspend_block_stat(struct suspend_blocker *blocker)
+{
+	if (wait_for_wakeup) {
+		if (debug_mask & DEBUG_WAKEUP)
+			pr_info("wakeup suspend blocker: %s\n", blocker->name);
+
+		wait_for_wakeup = false;
+		blocker->stat.wakeup_count++;
+	}
+	if (!(blocker->flags & SB_ACTIVE))
+		blocker->stat.last_time = ktime_get();
+}
+
+static void update_sleep_wait_stats(bool done)
+{
+	struct suspend_blocker *blocker;
+	ktime_t now, elapsed, add;
+
+	now = ktime_get();
+	elapsed = ktime_sub(now, last_sleep_time_update);
+	list_for_each_entry(blocker, &active_blockers, link) {
+		struct suspend_blocker_stats *stat = &blocker->stat;
+
+		if (blocker->flags & SB_PREVENTING_SUSPEND) {
+			add = elapsed;
+			stat->prevent_suspend_time = ktime_add(
+				stat->prevent_suspend_time, add);
+		}
+		if (done)
+			blocker->flags &= ~SB_PREVENTING_SUSPEND;
+		else
+			blocker->flags |= SB_PREVENTING_SUSPEND;
+	}
+	last_sleep_time_update = now;
+}
+
+void about_to_enter_suspend(void)
+{
+	wait_for_wakeup = true;
+}
+
+#else /* !CONFIG_SUSPEND_BLOCKER_STATS */
+
+static inline void init_dropped_suspend_blockers(void) {}
+static inline void suspend_blocker_stat_init(struct suspend_blocker_stats *s) {}
+static inline void suspend_blocker_stat_drop(struct suspend_blocker_stats *s) {}
+static inline void suspend_unblock_stat(struct suspend_blocker *blocker) {}
+static inline void suspend_block_stat(struct suspend_blocker *blocker) {}
+static inline void update_sleep_wait_stats(bool done) {}
+#endif /* !CONFIG_SUSPEND_BLOCKER_STATS */
 
 #define pr_info_time(fmt, args...) \
 	do { \
@@ -140,6 +252,8 @@ void suspend_blocker_register(struct suspend_blocker *blocker)
 	if (debug_mask & DEBUG_SUSPEND_BLOCKER)
 		pr_info("%s: Registering %s\n", __func__, blocker->name);
 
+	suspend_blocker_stat_init(&blocker->stat);
+
 	blocker->flags = SB_INITIALIZED;
 	INIT_LIST_HEAD(&blocker->link);
 
@@ -177,6 +291,10 @@ void suspend_blocker_unregister(struct suspend_blocker *blocker)
 		return;
 
 	spin_lock_irqsave(&list_lock, irqflags);
+
+	suspend_unblock_stat(blocker);
+	suspend_blocker_stat_drop(&blocker->stat);
+
 	blocker->flags &= ~SB_INITIALIZED;
 	list_del(&blocker->link);
 	if ((blocker->flags & SB_ACTIVE) && list_empty(&active_blockers))
@@ -206,10 +324,17 @@ void suspend_block(struct suspend_blocker *blocker)
 	if (debug_mask & DEBUG_SUSPEND_BLOCKER)
 		pr_info("%s: %s\n", __func__, blocker->name);
 
+	suspend_block_stat(blocker);
+
 	blocker->flags |= SB_ACTIVE;
 	list_move(&blocker->link, &active_blockers);
 
 	current_event_num++;
+
+	if (blocker == &main_suspend_blocker)
+		update_sleep_wait_stats(true);
+	else if (!suspend_blocker_is_active(&main_suspend_blocker))
+		update_sleep_wait_stats(false);
 
 	spin_unlock_irqrestore(&list_lock, irqflags);
 }
@@ -235,13 +360,19 @@ void suspend_unblock(struct suspend_blocker *blocker)
 	if (debug_mask & DEBUG_SUSPEND_BLOCKER)
 		pr_info("%s: %s\n", __func__, blocker->name);
 
+	suspend_unblock_stat(blocker);
+
 	list_move(&blocker->link, &inactive_blockers);
 	if ((blocker->flags & SB_ACTIVE) && list_empty(&active_blockers))
 		queue_work(pm_wq, &suspend_work);
 	blocker->flags &= ~(SB_ACTIVE);
 
-	if ((debug_mask & DEBUG_SUSPEND) && blocker == &main_suspend_blocker)
-		print_active_suspend_blockers();
+	if (blocker == &main_suspend_blocker) {
+		if (debug_mask & DEBUG_SUSPEND)
+			print_active_suspend_blockers();
+
+		update_sleep_wait_stats(false);
+	}
 
 	spin_unlock_irqrestore(&list_lock, irqflags);
 }
@@ -297,9 +428,67 @@ void __init opportunistic_suspend_init(void)
 	suspend_blocker_register(&main_suspend_blocker);
 	suspend_block(&main_suspend_blocker);
 	suspend_blocker_register(&unknown_wakeup);
+	init_dropped_suspend_blockers();
 }
 
 static struct dentry *suspend_blocker_stats_dentry;
+
+#ifdef CONFIG_SUSPEND_BLOCKER_STATS
+static int print_blocker_stats(struct seq_file *m, const char *name,
+				struct suspend_blocker_stats *stat, int flags)
+{
+	int lock_count = stat->count;
+	ktime_t active_time = ktime_set(0, 0);
+	ktime_t total_time = stat->total_time;
+	ktime_t max_time = stat->max_time;
+	ktime_t prevent_suspend_time = stat->prevent_suspend_time;
+
+	if (flags & SB_ACTIVE) {
+		ktime_t now, add_time;
+
+		now = ktime_get();
+		add_time = ktime_sub(now, stat->last_time);
+		lock_count++;
+		active_time = add_time;
+		total_time = ktime_add(total_time, add_time);
+		if (flags & SB_PREVENTING_SUSPEND)
+			prevent_suspend_time = ktime_add(prevent_suspend_time,
+					ktime_sub(now, last_sleep_time_update));
+		if (add_time.tv64 > max_time.tv64)
+			max_time = add_time;
+	}
+
+	return seq_printf(m, "\"%s\"\t%d\t%d\t%lld\t%lld\t%lld\t%lld\t%lld\n",
+			name, lock_count, stat->wakeup_count,
+			ktime_to_ns(active_time), ktime_to_ns(total_time),
+			ktime_to_ns(prevent_suspend_time),
+			ktime_to_ns(max_time),
+			ktime_to_ns(stat->last_time));
+}
+
+static int suspend_blocker_stats_show(struct seq_file *m, void *unused)
+{
+	unsigned long irqflags;
+	struct suspend_blocker *blocker;
+
+	seq_puts(m, "name\tcount\twake_count\tactive_since"
+		 "\ttotal_time\tsleep_time\tmax_time\tlast_change\n");
+
+	spin_lock_irqsave(&list_lock, irqflags);
+	list_for_each_entry(blocker, &active_blockers, link)
+		print_blocker_stats(m,
+				blocker->name, &blocker->stat, blocker->flags);
+
+	list_for_each_entry(blocker, &inactive_blockers, link)
+		print_blocker_stats(m,
+				blocker->name, &blocker->stat, blocker->flags);
+
+	print_blocker_stats(m, "deleted", &dropped_suspend_blockers, 0);
+	spin_unlock_irqrestore(&list_lock, irqflags);
+	return 0;
+}
+
+#else
 
 static int suspend_blocker_stats_show(struct seq_file *m, void *unused)
 {
@@ -315,6 +504,8 @@ static int suspend_blocker_stats_show(struct seq_file *m, void *unused)
 	spin_unlock_irqrestore(&list_lock, irqflags);
 	return 0;
 }
+
+#endif
 
 static int suspend_blocker_stats_open(struct inode *inode, struct file *file)
 {
