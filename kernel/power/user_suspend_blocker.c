@@ -28,7 +28,12 @@ enum {
 static int debug_mask = DEBUG_FAILURE;
 module_param_named(debug_mask, debug_mask, int, S_IRUGO | S_IWUSR | S_IWGRP);
 
+static int unclean_exit_grace_period;
+module_param_named(unclean_exit_grace_period, unclean_exit_grace_period, int,
+						S_IRUGO | S_IWUSR | S_IWGRP);
+
 static DEFINE_MUTEX(ioctl_lock);
+static struct suspend_blocker unclean_exit_suspend_blocker;
 
 #define USER_SUSPEND_BLOCKER_NAME_LEN 31
 
@@ -75,6 +80,8 @@ static long user_suspend_blocker_ioctl(struct file *filp, unsigned int cmd,
 {
 	void __user *arg = (void __user *)_arg;
 	struct user_suspend_blocker *blocker = filp->private_data;
+	struct timespec ts;
+	unsigned long timeout;
 	long ret = 0;
 
 	mutex_lock(&ioctl_lock);
@@ -89,6 +96,16 @@ static long user_suspend_blocker_ioctl(struct file *filp, unsigned int cmd,
 	switch (cmd) {
 	case SUSPEND_BLOCKER_IOCTL_BLOCK:
 		suspend_block(&blocker->blocker);
+		break;
+
+	case SUSPEND_BLOCKER_IOCTL_BLOCK_TIMEOUT:
+		if (copy_from_user(&ts, arg, sizeof(ts))) {
+			ret = -EFAULT;
+			goto done;
+		}
+		timeout  = timespec_to_jiffies(&ts);
+		suspend_block_timeout(&blocker->blocker, timeout);
+		ret = 0;
 		break;
 
 	case SUSPEND_BLOCKER_IOCTL_UNBLOCK:
@@ -109,6 +126,11 @@ done:
 static int user_suspend_blocker_release(struct inode *inode, struct file *filp)
 {
 	struct user_suspend_blocker *blocker = filp->private_data;
+
+	if (suspend_blocker_is_active(&blocker->blocker) &&
+						unclean_exit_grace_period)
+		suspend_block_timeout(&unclean_exit_suspend_blocker,
+					unclean_exit_grace_period * HZ);
 
 	if (blocker->registered)
 		suspend_blocker_unregister(&blocker->blocker);
@@ -131,12 +153,15 @@ struct miscdevice user_suspend_blocker_device = {
 
 static int __init user_suspend_blocker_init(void)
 {
+	suspend_blocker_init(&unclean_exit_suspend_blocker,
+				"user-unclean-exit");
 	return misc_register(&user_suspend_blocker_device);
 }
 
 static void __exit user_suspend_blocker_exit(void)
 {
 	misc_deregister(&user_suspend_blocker_device);
+	suspend_blocker_unregister(&unclean_exit_suspend_blocker);
 }
 
 module_init(user_suspend_blocker_init);
