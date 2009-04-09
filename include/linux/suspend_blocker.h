@@ -17,12 +17,21 @@
 #define _LINUX_SUSPEND_BLOCKER_H
 
 #include <linux/list.h>
+#include <linux/ktime.h>
 
 /**
  * struct suspend_blocker - the basic suspend_blocker structure
  * @link:	List entry for active or inactive list.
- * @flags:	Tracks initialized and active state.
+ * @flags:	Tracks initialized, active and stats state.
  * @name:	Name used for debugging.
+ * @count:	Number of times this blocker has been deacivated
+ * @wakeup_count: Number of times this blocker was the first to block suspend
+ *		after resume.
+ * @total_time:	Total time this suspend blocker has prevented suspend.
+ * @prevent_suspend_time: Time this suspend blocker has prevented suspend while
+ *		user-space requested suspend.
+ * @max_time:	Max time this suspend blocker has been continuously active
+ * @last_time:	Monotonic clock when the active state last changed.
  *
  * When a suspend_blocker is active it prevents the system from entering
  * suspend.
@@ -35,6 +44,16 @@ struct suspend_blocker {
 	struct list_head    link;
 	int                 flags;
 	const char         *name;
+#ifdef CONFIG_SUSPEND_BLOCKER_STATS
+	struct {
+		int             count;
+		int             wakeup_count;
+		ktime_t         total_time;
+		ktime_t         prevent_suspend_time;
+		ktime_t         max_time;
+		ktime_t         last_time;
+	} stat;
+#endif
 #endif
 };
 

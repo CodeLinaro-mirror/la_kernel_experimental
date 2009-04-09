@@ -141,6 +141,13 @@ config SUSPEND_BLOCKERS
 	  state through /sys/power/state, the requested sleep state will be
 	  entered when no suspend blockers are active.
 
+config SUSPEND_BLOCKER_STATS
+	bool "Suspend block stats"
+	depends on SUSPEND_BLOCKERS
+	default y
+	---help---
+	  Report suspend block stats in /sys/kernel/debug/suspend_blockers
+
 config USER_SUSPEND_BLOCKERS
 	bool "Userspace suspend blockers"
 	depends on SUSPEND_BLOCKERS
