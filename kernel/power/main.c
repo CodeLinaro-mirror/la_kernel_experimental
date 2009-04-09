@@ -20,6 +20,58 @@ DEFINE_MUTEX(pm_mutex);
 unsigned int pm_flags;
 EXPORT_SYMBOL(pm_flags);
 
+#ifdef CONFIG_OPPORTUNISTIC_SUSPEND
+struct pm_policy {
+	const char *name;
+	bool (*valid_state)(suspend_state_t state);
+	int (*set_state)(suspend_state_t state);
+};
+
+static struct pm_policy policies[] = {
+	{
+		.name		= "forced",
+		.valid_state	= valid_state,
+		.set_state	= enter_state,
+	},
+	{
+		.name		= "opportunistic",
+		.valid_state	= opportunistic_suspend_valid_state,
+		.set_state	= opportunistic_suspend_state,
+	},
+};
+
+static int policy;
+
+static inline bool hibernation_supported(void)
+{
+	return !strncmp(policies[policy].name, "forced", 6);
+}
+
+static inline bool pm_state_valid(int state_idx)
+{
+	return pm_states[state_idx] && policies[policy].valid_state(state_idx);
+}
+
+static inline int pm_enter_state(int state_idx)
+{
+	return policies[policy].set_state(state_idx);
+}
+
+#else
+
+static inline bool hibernation_supported(void) { return true; }
+
+static inline bool pm_state_valid(int state_idx)
+{
+	return pm_states[state_idx] && valid_state(state_idx);
+}
+
+static inline int pm_enter_state(int state_idx)
+{
+	return enter_state(state_idx);
+}
+#endif /* CONFIG_OPPORTUNISTIC_SUSPEND */
+
 #ifdef CONFIG_PM_SLEEP
 
 /* Routines for PM-transition notifications */
@@ -146,6 +198,12 @@ struct kobject *power_kobj;
  *
  *	store() accepts one of those strings, translates it into the 
  *	proper enumerated value, and initiates a suspend transition.
+ *
+ *	If policy is set to opportunistic, store() does not block until the
+ *	system resumes, and it will try to re-enter the state until another
+ *	state is requested. Suspend blockers are respected and the requested
+ *	state will only be entered when no suspend blockers are active.
+ *	Write "on" to disable.
  */
 static ssize_t state_show(struct kobject *kobj, struct kobj_attribute *attr,
 			  char *buf)
@@ -155,12 +213,13 @@ static ssize_t state_show(struct kobject *kobj, struct kobj_attribute *attr,
 	int i;
 
 	for (i = 0; i < PM_SUSPEND_MAX; i++) {
-		if (pm_states[i] && valid_state(i))
+		if (pm_state_valid(i))
 			s += sprintf(s,"%s ", pm_states[i]);
 	}
 #endif
 #ifdef CONFIG_HIBERNATION
-	s += sprintf(s, "%s\n", "disk");
+	if (hibernation_supported())
+		s += sprintf(s, "%s\n", "disk");
 #else
 	if (s != buf)
 		/* convert the last space to a newline */
@@ -173,7 +232,7 @@ static ssize_t state_store(struct kobject *kobj, struct kobj_attribute *attr,
 			   const char *buf, size_t n)
 {
 #ifdef CONFIG_SUSPEND
-	suspend_state_t state = PM_SUSPEND_STANDBY;
+	suspend_state_t state = PM_SUSPEND_ON;
 	const char * const *s;
 #endif
 	char *p;
@@ -185,8 +244,9 @@ static ssize_t state_store(struct kobject *kobj, struct kobj_attribute *attr,
 
 	/* First, check if we are requested to hibernate */
 	if (len == 4 && !strncmp(buf, "disk", len)) {
-		error = hibernate();
-  goto Exit;
+		if (hibernation_supported())
+			error = hibernate();
+		goto Exit;
 	}
 
 #ifdef CONFIG_SUSPEND
@@ -195,7 +255,7 @@ static ssize_t state_store(struct kobject *kobj, struct kobj_attribute *attr,
 			break;
 	}
 	if (state < PM_SUSPEND_MAX && *s)
-		error = enter_state(state);
+		error = pm_enter_state(state);
 #endif
 
  Exit:
@@ -203,6 +263,56 @@ static ssize_t state_store(struct kobject *kobj, struct kobj_attribute *attr,
 }
 
 power_attr(state);
+
+#ifdef CONFIG_OPPORTUNISTIC_SUSPEND
+/**
+ *	policy - set policy for state
+ */
+static ssize_t policy_show(struct kobject *kobj,
+			   struct kobj_attribute *attr, char *buf)
+{
+	char *s = buf;
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(policies); i++) {
+		if (i == policy)
+			s += sprintf(s, "[%s] ", policies[i].name);
+		else
+			s += sprintf(s, "%s ", policies[i].name);
+	}
+	if (s != buf)
+		/* convert the last space to a newline */
+		*(s-1) = '\n';
+	return (s - buf);
+}
+
+static ssize_t policy_store(struct kobject *kobj,
+			    struct kobj_attribute *attr,
+			    const char *buf, size_t n)
+{
+	const char *s;
+	char *p;
+	int len;
+	int i;
+
+	p = memchr(buf, '\n', n);
+	len = p ? p - buf : n;
+
+	for (i = 0; i < ARRAY_SIZE(policies); i++) {
+		s = policies[i].name;
+		if (s && len == strlen(s) && !strncmp(buf, s, len)) {
+			mutex_lock(&pm_mutex);
+			policies[policy].set_state(PM_SUSPEND_ON);
+			policy = i;
+			mutex_unlock(&pm_mutex);
+			return n;
+		}
+	}
+	return -EINVAL;
+}
+
+power_attr(policy);
+#endif /* CONFIG_OPPORTUNISTIC_SUSPEND */
 
 #ifdef CONFIG_PM_TRACE
 int pm_trace_enabled;
@@ -236,6 +346,9 @@ static struct attribute * g[] = {
 #endif
 #ifdef CONFIG_PM_SLEEP
 	&pm_async_attr.attr,
+#ifdef CONFIG_OPPORTUNISTIC_SUSPEND
+	&policy_attr.attr,
+#endif
 #ifdef CONFIG_PM_DEBUG
 	&pm_test_attr.attr,
 #endif
@@ -247,7 +360,7 @@ static struct attribute_group attr_group = {
 	.attrs = g,
 };
 
-#ifdef CONFIG_PM_RUNTIME
+#if defined(CONFIG_PM_RUNTIME) || defined(CONFIG_OPPORTUNISTIC_SUSPEND)
 struct workqueue_struct *pm_wq;
 EXPORT_SYMBOL_GPL(pm_wq);
 
@@ -266,6 +379,7 @@ static int __init pm_init(void)
 	int error = pm_start_workqueue();
 	if (error)
 		return error;
+	opportunistic_suspend_init();
 	power_kobj = kobject_create_and_add("power", NULL);
 	if (!power_kobj)
 		return -ENOMEM;

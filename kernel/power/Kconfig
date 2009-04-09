@@ -130,6 +130,22 @@ config SUSPEND_FREEZER
 
 	  Turning OFF this setting is NOT recommended! If in doubt, say Y.
 
+config OPPORTUNISTIC_SUSPEND
+	bool "Opportunistic suspend"
+	depends on SUSPEND
+	select RTC_LIB
+	default n
+	---help---
+	  Opportunistic sleep support.  Allows the system to be put into a sleep
+	  state opportunistically, if it doesn't do any useful work at the
+	  moment. The PM subsystem is switched into this mode of operation by
+	  writing "opportunistic" into /sys/power/policy, while writing
+	  "forced" to this file turns the opportunistic suspend feature off.
+	  In the "opportunistic" mode suspend blockers are used to determine
+	  when to suspend the system and the value written to /sys/power/state
+	  determines the sleep state the system will be put into when there are
+	  no active suspend blockers.
+
 config HIBERNATION_NVS
 	bool
 
