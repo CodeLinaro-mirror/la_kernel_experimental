@@ -20,6 +20,7 @@
 
 #define SUSPEND_BLOCKER_IOCTL_INIT(len)		_IOC(_IOC_WRITE, 's', 0, len)
 #define SUSPEND_BLOCKER_IOCTL_BLOCK		_IO('s', 1)
+#define SUSPEND_BLOCKER_IOCTL_BLOCK_TIMEOUT	_IOW('s', 2, struct timespec)
 #define SUSPEND_BLOCKER_IOCTL_UNBLOCK		_IO('s', 3)
 
 #endif
