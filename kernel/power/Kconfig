@@ -141,6 +141,15 @@ config SUSPEND_BLOCKERS
 	  state through /sys/power/state, the requested sleep state will be
 	  entered when no suspend blockers are active.
 
+config USER_SUSPEND_BLOCKERS
+	bool "Userspace suspend blockers"
+	depends on SUSPEND_BLOCKERS
+	default y
+	---help---
+	  User-space suspend block api. Creates a misc device with ioctls
+	  to create, block and unblock a suspend_blocker. The suspend_blocker
+	  will be deleted when the device is closed.
+
 config HIBERNATION_NVS
 	bool
 
