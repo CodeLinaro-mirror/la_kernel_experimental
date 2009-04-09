@@ -239,4 +239,8 @@ static inline void suspend_thaw_processes(void)
 
 /* kernel/power/suspend_block.c */
 void request_suspend_state(suspend_state_t state);
-
+#ifdef CONFIG_SUSPEND_BLOCKER_STATS
+void about_to_enter_suspend(void);
+#else
+static inline void about_to_enter_suspend(void) {}
+#endif
