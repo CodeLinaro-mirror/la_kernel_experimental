@@ -24,6 +24,7 @@
  * struct suspend_blocker_stats - statistics for a suspend blocker
  *
  * @count: Number of times this blocker has been deacivated.
+ * @expire_count: Number of times this blocker has been auto-deacivated.
  * @wakeup_count: Number of times this blocker was the first to block suspend
  *	after resume.
  * @total_time: Total time this suspend blocker has prevented suspend.
@@ -35,6 +36,7 @@
 struct suspend_blocker_stats {
 #ifdef CONFIG_SUSPEND_BLOCKER_STATS
 	unsigned int count;
+	unsigned int expire_count;
 	unsigned int wakeup_count;
 	ktime_t total_time;
 	ktime_t prevent_suspend_time;
@@ -47,6 +49,7 @@ struct suspend_blocker_stats {
  * struct suspend_blocker - the basic suspend_blocker structure
  * @link: List entry for active or inactive list.
  * @flags: Tracks initialized and active state and statistics.
+ * @expires: Time, in jiffies, to unblock suspend.
  * @name: Suspend blocker name used for debugging.
  *
  * When a suspend_blocker is active it prevents the system from entering
@@ -58,6 +61,7 @@ struct suspend_blocker {
 #ifdef CONFIG_OPPORTUNISTIC_SUSPEND
 	struct list_head link;
 	int flags;
+	unsigned long expires;
 	const char *name;
 	struct suspend_blocker_stats stat;
 #endif
@@ -107,6 +111,8 @@ extern void suspend_blocker_init(struct suspend_blocker *blocker,
 				 const char *name);
 extern void suspend_blocker_unregister(struct suspend_blocker *blocker);
 extern void suspend_block(struct suspend_blocker *blocker);
+extern void suspend_block_timeout(struct suspend_blocker *blocker,
+				  long timeout);
 extern void suspend_unblock(struct suspend_blocker *blocker);
 extern bool suspend_blocker_is_active(struct suspend_blocker *blocker);
 extern bool suspend_is_blocked(void);
@@ -129,6 +135,7 @@ static inline void suspend_blocker_init(struct suspend_blocker *bl,
 					const char *n) {}
 static inline void suspend_blocker_unregister(struct suspend_blocker *bl) {}
 static inline void suspend_block(struct suspend_blocker *bl) {}
+static inline void suspend_block_timeout(struct suspend_blocker *bl, long t) {}
 static inline void suspend_unblock(struct suspend_blocker *bl) {}
 static inline bool suspend_blocker_is_active(struct suspend_blocker *bl)
 {

@@ -128,6 +128,17 @@ if (list_empty(&state->pending_work))
 else
 	suspend_block(&state->suspend_blocker);
 
+A driver can also call suspend_block_timeout() to release the suspend_blocker
+after a delay:
+
+	suspend_block_timeout(&state->suspend_blocker, HZ);
+
+This works whether the suspend_blocker is already active or not. It is useful if
+the driver woke up other parts of the system that do not use suspend_blockers
+but still need to run. Avoid this when possible, since it will waste power
+if the timeout is long or may fail to finish needed work if the timeout is
+short. Calling suspend_block or suspend_unblock will cancel the timeout.
+
 User space API
 ==============
 
