@@ -22,8 +22,9 @@
 /**
  * struct suspend_blocker - the basic suspend_blocker structure
  * @link:	List entry for active or inactive list.
- * @flags:	Tracks initialized, active and stats state.
+ * @flags:	Tracks initialized, active, stats and autoexpire state.
  * @name:	Name used for debugging.
+ * @expires:	Time, in jiffies, to unblock suspend.
  * @count:	Number of times this blocker has been deacivated
  * @wakeup_count: Number of times this blocker was the first to block suspend
  *		after resume.
@@ -44,9 +45,11 @@ struct suspend_blocker {
 	struct list_head    link;
 	int                 flags;
 	const char         *name;
+	unsigned long       expires;
 #ifdef CONFIG_SUSPEND_BLOCKER_STATS
 	struct {
 		int             count;
+		int             expire_count;
 		int             wakeup_count;
 		ktime_t         total_time;
 		ktime_t         prevent_suspend_time;
@@ -62,6 +65,7 @@ struct suspend_blocker {
 void suspend_blocker_init(struct suspend_blocker *blocker, const char *name);
 void suspend_blocker_destroy(struct suspend_blocker *blocker);
 void suspend_block(struct suspend_blocker *blocker);
+void suspend_block_timeout(struct suspend_blocker *blocker, long timeout);
 void suspend_unblock(struct suspend_blocker *blocker);
 bool suspend_blocker_is_active(struct suspend_blocker *blocker);
 bool suspend_is_blocked(void);
@@ -72,6 +76,7 @@ static inline void suspend_blocker_init(struct suspend_blocker *blocker,
 					const char *name) {}
 static inline void suspend_blocker_destroy(struct suspend_blocker *blocker) {}
 static inline void suspend_block(struct suspend_blocker *blocker) {}
+static inline void suspend_block_timeout(struct suspend_blocker *bl, long t) {}
 static inline void suspend_unblock(struct suspend_blocker *blocker) {}
 static inline bool suspend_blocker_is_active(struct suspend_blocker *bl)
 								{ return 0; }
