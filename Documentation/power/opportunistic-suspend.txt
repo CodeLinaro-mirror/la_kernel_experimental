@@ -1,0 +1,129 @@
+Opportunistic Suspend
+=====================
+
+Opportunistic suspend is a feature allowing the system to be suspended (ie. put
+into one of the available sleep states) automatically whenever it is regarded
+as idle.  The suspend blockers framework described below is used to determine
+when that happens.
+
+The /sys/power/policy sysfs attribute is used to switch the system between the
+opportunistic and "forced" suspend behavior, where in the latter case the
+system is only suspended if a specific value, corresponding to one of the
+available system sleep states, is written into /sys/power/state.  However, in
+the former, opportunistic, case the system is put into the sleep state
+corresponding to the value written to /sys/power/state whenever there are no
+active suspend blockers. The default policy is "forced". Also, suspend blockers
+do not affect sleep states entered from idle.
+
+When the policy is "opportunisic", there is a special value, "on", that can be
+written to /sys/power/state. This will block the automatic sleep request, as if
+a suspend blocker was used by a device driver. This way the opportunistic
+suspend may be blocked by user space whithout switching back to the "forced"
+mode.
+
+A suspend blocker is an object used to inform the PM subsystem when the system
+can or cannot be suspended in the "opportunistic" mode (the "forced" mode
+ignores suspend blockers).  To use it, a device driver creates a struct
+suspend_blocker that must be initialized with suspend_blocker_init(). Before
+freeing the suspend_blocker structure or its name, suspend_blocker_unregister()
+must be called on it.
+
+A suspend blocker is activated using suspend_block(), which prevents the PM
+subsystem from putting the system into the requested sleep state in the
+"opportunistic" mode until the suspend blocker is deactivated with
+suspend_unblock(). Multiple suspend blockers may be active simultaneously, and
+the system will not suspend as long as at least one of them is active.
+
+If opportunistic suspend is already in progress when suspend_block() is called,
+it will abort the suspend, unless suspend_ops->enter has already been
+executed. If suspend is aborted this way, the system is usually not fully
+operational at that point. The suspend callbacks of some drivers may still be
+running and it usually takes time to restore the system to the fully operational
+state.
+
+Here's an example showing how a cell phone or other embedded system can handle
+keystrokes (or other input events) in the presence of suspend blockers. Use
+set_irq_wake or a platform specific API to make sure the keypad interrupt wakes
+up the cpu. Once the keypad driver has resumed, the sequence of events can look
+like this:
+
+- The Keypad driver gets an interrupt. It then calls suspend_block on the
+  keypad-scan suspend_blocker and starts scanning the keypad matrix.
+- The keypad-scan code detects a key change and reports it to the input-event
+  driver.
+- The input-event driver sees the key change, enqueues an event, and calls
+  suspend_block on the input-event-queue suspend_blocker.
+- The keypad-scan code detects that no keys are held and calls suspend_unblock
+  on the keypad-scan suspend_blocker.
+- The user-space input-event thread returns from select/poll, calls
+  suspend_block on the process-input-events suspend_blocker and then calls read
+  on the input-event device.
+- The input-event driver dequeues the key-event and, since the queue is now
+  empty, it calls suspend_unblock on the input-event-queue suspend_blocker.
+- The user-space input-event thread returns from read. If it determines that
+  the key should be ignored, it calls suspend_unblock on the
+  process_input_events suspend_blocker and then calls select or poll. The
+  system will automatically suspend again, since now no suspend blockers are
+  active.
+
+If the key that was pressed instead should preform a simple action (for example,
+adjusting the volume), this action can be performed right before calling
+suspend_unblock on the process_input_events suspend_blocker. However, if the key
+triggers a longer-running action, that action needs its own suspend_blocker and
+suspend_block must be called on that suspend blocker before calling
+suspend_unblock on the process_input_events suspend_blocker.
+
+                 Key pressed   Key released
+                     |             |
+keypad-scan          ++++++++++++++++++
+input-event-queue        +++          +++
+process-input-events       +++          +++
+
+
+Driver API
+==========
+
+A driver can use the suspend block API by adding a suspend_blocker variable to
+its state and calling suspend_blocker_init(). For instance:
+
+struct state {
+	struct suspend_blocker suspend_blocker;
+}
+
+init() {
+	suspend_blocker_init(&state->suspend_blocker, name);
+}
+
+If the suspend_blocker variable is allocated statically,
+DEFINE_SUSPEND_BLOCKER() should be used to initialize it, for example:
+
+static DEFINE_SUSPEND_BLOCKER(blocker, name);
+
+and suspend_blocker_register(&blocker) has to be called to make the suspend
+blocker usable.
+
+Before freeing the memory in which a suspend_blocker variable is located,
+suspend_blocker_unregister() must be called, for instance:
+
+uninit() {
+	suspend_blocker_unregister(&state->suspend_blocker);
+}
+
+When the driver determines that it needs to run (usually in an interrupt
+handler) it calls suspend_block():
+
+	suspend_block(&state->suspend_blocker);
+
+When it no longer needs to run it calls suspend_unblock():
+
+	suspend_unblock(&state->suspend_blocker);
+
+Calling suspend_block() when the suspend blocker is active or suspend_unblock()
+when it is not active has no effect (i.e., these functions don't nest). This
+allows drivers to update their state and call suspend suspend_block() or
+suspend_unblock() based on the result. For instance:
+
+if (list_empty(&state->pending_work))
+	suspend_unblock(&state->suspend_blocker);
+else
+	suspend_block(&state->suspend_blocker);
