@@ -12,6 +12,7 @@
 #include <linux/string.h>
 #include <linux/resume-trace.h>
 #include <linux/workqueue.h>
+#include <linux/suspend_blocker.h>
 
 #include "power.h"
 
@@ -19,6 +20,27 @@ DEFINE_MUTEX(pm_mutex);
 
 unsigned int pm_flags;
 EXPORT_SYMBOL(pm_flags);
+
+struct policy {
+	const char *name;
+	bool (*valid_state)(suspend_state_t state);
+	int (*set_state)(suspend_state_t state);
+};
+static struct policy policies[] = {
+	{
+		.name		= "forced",
+		.valid_state	= valid_state,
+		.set_state	= enter_state,
+	},
+#ifdef CONFIG_SUSPEND_BLOCKERS
+	{
+		.name		= "opportunistic",
+		.valid_state	= request_suspend_valid_state,
+		.set_state	= request_suspend_state,
+	},
+#endif
+};
+static int policy;
 
 #ifdef CONFIG_PM_SLEEP
 
@@ -146,6 +168,12 @@ struct kobject *power_kobj;
  *
  *	store() accepts one of those strings, translates it into the 
  *	proper enumerated value, and initiates a suspend transition.
+ *
+ *	If policy is set to opportunistic, store() does not block until the
+ *	system resumes, and it will try to re-enter the state until another
+ *	state is requested. Suspend blockers are respected and the requested
+ *	state will only be entered when no suspend blockers are active.
+ *	Write "on" to cancel.
  */
 static ssize_t state_show(struct kobject *kobj, struct kobj_attribute *attr,
 			  char *buf)
@@ -155,7 +183,7 @@ static ssize_t state_show(struct kobject *kobj, struct kobj_attribute *attr,
 	int i;
 
 	for (i = 0; i < PM_SUSPEND_MAX; i++) {
-		if (pm_states[i] && valid_state(i))
+		if (pm_states[i] && policies[policy].valid_state(i))
 			s += sprintf(s,"%s ", pm_states[i]);
 	}
 #endif
@@ -173,7 +201,7 @@ static ssize_t state_store(struct kobject *kobj, struct kobj_attribute *attr,
 			   const char *buf, size_t n)
 {
 #ifdef CONFIG_SUSPEND
-	suspend_state_t state = PM_SUSPEND_STANDBY;
+	suspend_state_t state = PM_SUSPEND_ON;
 	const char * const *s;
 #endif
 	char *p;
@@ -195,7 +223,7 @@ static ssize_t state_store(struct kobject *kobj, struct kobj_attribute *attr,
 			break;
 	}
 	if (state < PM_SUSPEND_MAX && *s)
-		error = enter_state(state);
+		error = policies[policy].set_state(state);
 #endif
 
  Exit:
@@ -203,6 +231,55 @@ static ssize_t state_store(struct kobject *kobj, struct kobj_attribute *attr,
 }
 
 power_attr(state);
+
+/**
+ *	policy - set policy for state
+ */
+
+static ssize_t policy_show(struct kobject *kobj,
+			   struct kobj_attribute *attr, char *buf)
+{
+	char *s = buf;
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(policies); i++) {
+		if (i == policy)
+			s += sprintf(s, "[%s] ", policies[i].name);
+		else
+			s += sprintf(s, "%s ", policies[i].name);
+	}
+	if (s != buf)
+		/* convert the last space to a newline */
+		*(s-1) = '\n';
+	return (s - buf);
+}
+
+static ssize_t policy_store(struct kobject *kobj,
+			    struct kobj_attribute *attr,
+			    const char *buf, size_t n)
+{
+	const char *s;
+	char *p;
+	int len;
+	int i;
+
+	p = memchr(buf, '\n', n);
+	len = p ? p - buf : n;
+
+	for (i = 0; i < ARRAY_SIZE(policies); i++) {
+		s = policies[i].name;
+		if (s && len == strlen(s) && !strncmp(buf, s, len)) {
+			mutex_lock(&pm_mutex);
+			policies[policy].set_state(PM_SUSPEND_ON);
+			policy = i;
+			mutex_unlock(&pm_mutex);
+			return n;
+		}
+	}
+	return -EINVAL;
+}
+
+power_attr(policy);
 
 #ifdef CONFIG_PM_TRACE
 int pm_trace_enabled;
@@ -231,6 +308,7 @@ power_attr(pm_trace);
 
 static struct attribute * g[] = {
 	&state_attr.attr,
+	&policy_attr.attr,
 #ifdef CONFIG_PM_TRACE
 	&pm_trace_attr.attr,
 #endif

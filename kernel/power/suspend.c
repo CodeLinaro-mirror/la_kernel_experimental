@@ -16,10 +16,12 @@
 #include <linux/cpu.h>
 #include <linux/syscalls.h>
 #include <linux/gfp.h>
+#include <linux/suspend_blocker.h>
 
 #include "power.h"
 
 const char *const pm_states[PM_SUSPEND_MAX] = {
+	[PM_SUSPEND_ON]		= "on",
 	[PM_SUSPEND_STANDBY]	= "standby",
 	[PM_SUSPEND_MEM]	= "mem",
 };
@@ -157,7 +159,7 @@ static int suspend_enter(suspend_state_t state)
 
 	error = sysdev_suspend(PMSG_SUSPEND);
 	if (!error) {
-		if (!suspend_test(TEST_CORE))
+		if (!suspend_is_blocked() && !suspend_test(TEST_CORE))
 			error = suspend_ops->enter(state);
 		sysdev_resume();
 	}
