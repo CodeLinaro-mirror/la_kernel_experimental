@@ -33,5 +33,6 @@ struct resume_swap_area {
 #define SUSPEND_BLOCKER_IOCTL_SET_NAME(len)	_IOC(_IOC_WRITE, 's', 0, len)
 #define SUSPEND_BLOCKER_IOCTL_BLOCK		_IO('s', 1)
 #define SUSPEND_BLOCKER_IOCTL_UNBLOCK		_IO('s', 2)
+#define SUSPEND_BLOCKER_IOCTL_BLOCK_TIMEOUT	_IOW('s', 3, struct timespec)
 
 #endif /* _LINUX_SUSPEND_IOCTLS_H */
