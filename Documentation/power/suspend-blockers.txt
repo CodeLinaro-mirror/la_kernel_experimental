@@ -115,10 +115,17 @@ then call:
 
 To activate a suspend_blocker call:
     ioctl(fd, SUSPEND_BLOCKER_IOCTL_BLOCK);
+or
+    ioctl(fd, SUSPEND_BLOCKER_IOCTL_BLOCK_TIMEOUT, &timespec_timeout);
 
 To unblock call:
     ioctl(fd, SUSPEND_BLOCKER_IOCTL_UNBLOCK);
 
 To destroy the suspend_blocker, close the device:
     close(fd);
+
+A module parameter, unclean_exit_grace_period, can be set to allow servers
+some time to restart if they crash with an active suspend_blocker. If the
+process dies or the device is closed while the suspend_blocker is active, a
+suspend_blocker will be held for the number of seconds specified.
 
