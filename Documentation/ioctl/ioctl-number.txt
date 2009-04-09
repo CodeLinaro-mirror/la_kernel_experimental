@@ -254,7 +254,8 @@ Code  Seq#(hex)	Include File		Comments
 'q'	80-FF	linux/telephony.h	Internet PhoneJACK, Internet LineJACK
 		linux/ixjuser.h		<http://www.quicknet.net>
 'r'	00-1F	linux/msdos_fs.h and fs/fat/dir.c
-'s'	all	linux/cdk.h
+'s'	all	linux/cdk.h	conflict!
+'s'	all	linux/suspend_block_dev.h	conflict!
 't'	00-7F	linux/if_ppp.h
 't'	80-8F	linux/isdn_ppp.h
 't'	90	linux/toshiba.h

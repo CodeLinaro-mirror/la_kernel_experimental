@@ -146,6 +146,13 @@ config OPPORTUNISTIC_SUSPEND
 	  determines the sleep state the system will be put into when there are
 	  no active suspend blockers.
 
+config USER_SUSPEND_BLOCKERS
+	bool "User space suspend blockers"
+	depends on OPPORTUNISTIC_SUSPEND
+	---help---
+	  User space suspend blockers API.  Creates a misc device allowing user
+	  space to create, use and destroy suspend blockers.
+
 config HIBERNATION_NVS
 	bool
 

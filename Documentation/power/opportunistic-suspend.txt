@@ -127,3 +127,30 @@ if (list_empty(&state->pending_work))
 	suspend_unblock(&state->suspend_blocker);
 else
 	suspend_block(&state->suspend_blocker);
+
+User space API
+==============
+
+To create a suspend blocker from user space, open the suspend_blocker special
+device file:
+
+    fd = open("/dev/suspend_blocker", O_RDWR | O_CLOEXEC);
+
+then optionally call:
+
+    ioctl(fd, SUSPEND_BLOCKER_IOCTL_SET_NAME(strlen(name)), name);
+
+To activate the suspend blocker call:
+
+    ioctl(fd, SUSPEND_BLOCKER_IOCTL_BLOCK);
+
+To deactivate it call:
+
+    ioctl(fd, SUSPEND_BLOCKER_IOCTL_UNBLOCK);
+
+To destroy the suspend blocker, close the device:
+
+    close(fd);
+
+If the first ioctl called is not SUSPEND_BLOCKER_IOCTL_SET_NAME the suspend
+blocker will get the default name "(userspace)".
