@@ -157,9 +157,13 @@ config USER_SUSPEND_BLOCKERS
 	  to create, block and unblock a suspend_blocker. The suspend_blocker
 	  will be deleted when the device is closed.
 
+config HAS_EARLYSUSPEND
+	bool
+
 config EARLYSUSPEND
 	bool "Early suspend"
 	depends on SUSPEND_BLOCKERS
+	select HAS_EARLYSUSPEND
 	default y
 	---help---
 	  Call early suspend handlers when the user requested sleep state
