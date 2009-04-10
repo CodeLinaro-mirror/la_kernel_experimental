@@ -8,6 +8,7 @@ obj-$(CONFIG_PM_SLEEP)		+= console.o
 obj-$(CONFIG_FREEZER)		+= process.o
 obj-$(CONFIG_SUSPEND)		+= suspend.o
 obj-$(CONFIG_OPPORTUNISTIC_SUSPEND)	+= opportunistic_suspend.o
+obj-$(CONFIG_OPPORTUNISTIC_SUSPEND)	+= wakelocktest.o
 obj-$(CONFIG_USER_SUSPEND_BLOCKERS)	+= user_suspend_blocker.o
 obj-$(CONFIG_EARLYSUSPEND)	+= earlysuspend.o
 obj-$(CONFIG_CONSOLE_EARLYSUSPEND)	+= consoleearlysuspend.o
