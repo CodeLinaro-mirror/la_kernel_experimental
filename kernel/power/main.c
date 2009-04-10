@@ -187,6 +187,9 @@ power_attr(state);
  *	requested. Suspend blockers are respected and the requested state will
  *	only be entered when no suspend blockers are active.
  *	Write "on" to cancel.
+ *
+ *	If CONFIG_EARLYSUSPEND is set, early_suspend hooks are called when
+ *	the requested state changes to or from "on"
  */
 
 #ifdef CONFIG_SUSPEND_BLOCKERS

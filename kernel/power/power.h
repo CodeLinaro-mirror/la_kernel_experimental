@@ -238,9 +238,14 @@ static inline void suspend_thaw_processes(void)
 #endif
 
 /* kernel/power/suspend_block.c */
+extern struct workqueue_struct *suspend_work_queue;
+extern struct suspend_blocker main_suspend_blocker;
 void request_suspend_state(suspend_state_t state);
 #ifdef CONFIG_SUSPEND_BLOCKER_STATS
 void about_to_enter_suspend(void);
 #else
 static inline void about_to_enter_suspend(void) {}
 #endif
+
+/* kernel/power/earlysuspend.c */
+void request_early_suspend_state(bool on);

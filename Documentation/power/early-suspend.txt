@@ -1,0 +1,26 @@
+Early-suspend
+=============
+
+The early-suspend api allows drivers to get notified when user-space writes to 
+/sys/power/request_state to indicate that the user visible sleep state should 
+change. A level controls what order the handlers are called in. Suspend 
+handlers are called in low to high level order, resume handlers are called in 
+the opposite order. 
+
+Four levels are defined:
+EARLY_SUSPEND_LEVEL_BLANK_SCREEN:
+  On suspend the screen should be turned off but the framebuffer must still be
+  accessible. On resume the screen can be turned back on.
+
+EARLY_SUSPEND_LEVEL_STOP_DRAWING:
+  On suspend this level notifies user-space that it should stop accessing the 
+  framebuffer and it waits for it to complete. On resume it notifies user-space 
+  that it should resume screen access.
+  Two methods are provided, console switch or a sysfs interface.
+
+EARLY_SUSPEND_LEVEL_DISABLE_FB:
+  Turn off the framebuffer on suspend and back on on resume.
+
+EARLY_SUSPEND_LEVEL_STOP_INPUT:
+  On suspend turn off input devices that are not capable of wakeup or where
+  wakeup is disabled. On resume turn the same devices back on.
