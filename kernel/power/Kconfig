@@ -161,9 +161,13 @@ config USER_SUSPEND_BLOCKERS
 	  User space suspend blockers API.  Creates a misc device allowing user
 	  space to create, use and destroy suspend blockers.
 
+config HAS_EARLYSUSPEND
+	bool
+
 config EARLYSUSPEND
 	bool "Early suspend"
 	depends on OPPORTUNISTIC_SUSPEND
+	select HAS_EARLYSUSPEND
 	default y
 	---help---
 	  Call early suspend handlers when the user requested sleep state
