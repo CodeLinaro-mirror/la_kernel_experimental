@@ -568,10 +568,14 @@ int opportunistic_suspend_state(suspend_state_t state)
 			     ktime_to_ns(ktime_get()));
 
 	requested_suspend_state = state;
+#ifdef CONFIG_EARLYSUSPEND
+	request_early_suspend_state(state == PM_SUSPEND_ON);
+#else
 	if (state == PM_SUSPEND_ON)
 		suspend_block(&main_suspend_blocker);
 	else
 		suspend_unblock(&main_suspend_blocker);
+#endif
 
 	spin_unlock_irqrestore(&state_lock, irqflags);
 

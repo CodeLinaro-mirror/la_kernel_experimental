@@ -239,6 +239,7 @@ static inline void suspend_thaw_processes(void)
 
 #ifdef CONFIG_OPPORTUNISTIC_SUSPEND
 /* kernel/power/opportunistic_suspend.c */
+extern struct suspend_blocker main_suspend_blocker;
 extern int opportunistic_suspend_state(suspend_state_t state);
 extern bool opportunistic_suspend_valid_state(suspend_state_t state);
 extern void __init opportunistic_suspend_init(void);
@@ -250,3 +251,6 @@ void about_to_enter_suspend(void);
 #else
 static inline void about_to_enter_suspend(void) {}
 #endif
+
+/* kernel/power/earlysuspend.c */
+void request_early_suspend_state(bool on);

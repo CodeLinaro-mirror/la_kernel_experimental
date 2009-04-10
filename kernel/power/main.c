@@ -204,6 +204,9 @@ struct kobject *power_kobj;
  *	state is requested. Suspend blockers are respected and the requested
  *	state will only be entered when no suspend blockers are active.
  *	Write "on" to disable.
+ *
+ *	If CONFIG_EARLYSUSPEND is set, early_suspend hooks are called when
+ *	the requested state changes to or from "on"
  */
 static ssize_t state_show(struct kobject *kobj, struct kobj_attribute *attr,
 			  char *buf)
