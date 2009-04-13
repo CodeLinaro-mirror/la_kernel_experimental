@@ -16,8 +16,11 @@
 #ifndef _LINUX_SUSPEND_BLOCKER_H
 #define _LINUX_SUSPEND_BLOCKER_H
 
+#include <linux/list.h>
+
 /**
  * struct suspend_blocker - the basic suspend_blocker structure
+ * @link:	List entry for active or inactive list.
  * @flags:	Tracks initialized and active state.
  * @name:	Name used for debugging.
  *
@@ -29,7 +32,8 @@
 
 struct suspend_blocker {
 #ifdef CONFIG_SUSPEND_BLOCKERS
-	atomic_t            flags;
+	struct list_head    link;
+	int                 flags;
 	const char         *name;
 #endif
 };
