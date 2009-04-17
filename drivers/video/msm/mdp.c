@@ -499,7 +499,7 @@ int mdp_probe(struct platform_device *pdev)
 	/* register mdp device */
 	mdp->mdp_dev.dev.parent = &pdev->dev;
 	mdp->mdp_dev.dev.class = mdp_class;
-	snprintf(mdp->mdp_dev.dev.bus_id, BUS_ID_SIZE, "mdp%d", pdev->id);
+	dev_set_name(&mdp->mdp_dev.dev, "mdp%d", pdev->id);
 
 	/* if you can remove the platform device you'd have to implement
 	 * this:
