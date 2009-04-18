@@ -30,11 +30,19 @@
 void synchronize_irq(unsigned int irq)
 {
 	struct irq_desc *desc = irq_to_desc(irq);
+#ifdef CONFIG_SMP
 	unsigned int status;
-
+#else
+	static DEFINE_RATELIMIT_STATE(rs, 30 * HZ, 5);
+#endif
 	if (!desc)
 		return;
 
+#ifndef CONFIG_SMP
+	barrier();
+	WARN((desc->status & IRQ_INPROGRESS) && __ratelimit(&rs),
+	     "synchronize_irq: irq %d in progress\n", irq);
+#else
 	do {
 		unsigned long flags;
 
@@ -52,6 +60,7 @@ void synchronize_irq(unsigned int irq)
 
 		/* Oops, that failed? */
 	} while (status & IRQ_INPROGRESS);
+#endif
 
 	/*
 	 * We made sure that no hardirq handler is running. Now verify
