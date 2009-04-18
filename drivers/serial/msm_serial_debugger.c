@@ -214,6 +214,11 @@ static void dump_irqs(void)
 	}
 }
 
+static void debug_crash(void)
+{
+	BUG();
+}
+
 static void debug_exec(const char *cmd, unsigned *regs)
 {
 	if (!strcmp(cmd, "pc")) {
@@ -229,6 +234,9 @@ static void debug_exec(const char *cmd, unsigned *regs)
 			mode_name(regs[16]));
 		dprintf(" ip %08x  sp %08x  lr %08x  pc %08x  cpsr %08x\n",
 			regs[12], regs[13], regs[14], regs[15], regs[16]);
+	} else if (!strcmp(cmd, "crash")) {
+		regs[14] = regs[15];
+		regs[17] = (unsigned)debug_crash + 4;
 	} else if (!strcmp(cmd, "reboot")) {
 		if (msm_hw_reset_hook)
 			msm_hw_reset_hook();
