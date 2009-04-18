@@ -815,7 +815,7 @@ static void akm_work_func(struct work_struct *work)
 static irqreturn_t akm8976_interrupt(int irq, void *dev_id)
 {
 	struct akm8976_data *data = dev_id;
-	disable_irq(this_client->irq);
+	disable_irq_nosync(this_client->irq);
 	schedule_work(&data->work);
 	return IRQ_HANDLED;
 }
