@@ -97,13 +97,16 @@ static void debug_port_init(void)
 	msm_write(UART_CR_CMD_SET_RFR, UART_CR);
 
 	/* setup clock dividers */
-	if (0 && clk_get_rate(debug_clk) == 19200000) {
+#ifdef CONFIG_ARCH_MSM_SCORPION
+	if (clk_get_rate(debug_clk) == 19200000) {
 		/* clock is TCXO (19.2MHz) */
 		msm_write(0x06, UART_MREG);
 		msm_write(0xF1, UART_NREG);
 		msm_write(0x0F, UART_DREG);
 		msm_write(0x1A, UART_MNDREG);
-	} else {
+	} else
+#endif
+	{
 		/* clock must be TCXO/4 */
 		msm_write(0xC0, UART_MREG);
 		msm_write(0xB2, UART_NREG);
