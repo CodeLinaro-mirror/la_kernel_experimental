@@ -157,6 +157,11 @@
 #define MSM_SCPLL_SIZE        SZ_4K 
 #endif
 
+#if defined(CONFIG_ARCH_QSD8X50)
+#define MSM_GPU_REG_PHYS      0xA0000000
+#define MSM_GPU_REG_SIZE      0x00020000
+#endif
+
 
 #ifdef CONFIG_MSM_DEBUG_UART
 #define MSM_DEBUG_UART_BASE   0xE1000000
