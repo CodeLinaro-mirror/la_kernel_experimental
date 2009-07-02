@@ -55,7 +55,7 @@ static int dump_ch(char *buf, int max, struct smd_channel *ch)
 		buf, max,
 		"ch%02d:"
 		" %8s(%05d/%05d) %c%c%c%c%c%c%c <->"
-		" %8s(%05d/%05d) %c%c%c%c%c%c%c '%s'\n", ch->n,
+		" %8s(%05d/%05d) %c%c%c%c%c%c%c\n", ch->n,
 		chstate(s->state), s->tail, s->head,
 		s->fDSR ? 'D' : 'd',
 		s->fCTS ? 'C' : 'c',
@@ -71,8 +71,7 @@ static int dump_ch(char *buf, int max, struct smd_channel *ch)
 		r->fRI ? 'I' : 'i',
 		r->fHEAD ? 'W' : 'w',
 		r->fTAIL ? 'R' : 'r',
-		r->fSTATE ? 'S' : 's',
-		ch->name
+		r->fSTATE ? 'S' : 's'
 		);
 }
 
@@ -136,9 +135,7 @@ static int debug_read_ch(char *buf, int max)
 	int i = 0;
 
 	spin_lock_irqsave(&smd_lock, flags);
-	list_for_each_entry(ch, &smd_ch_list_dsp, ch_list)
-		i += dump_ch(buf + i, max - i, ch);
-	list_for_each_entry(ch, &smd_ch_list_modem, ch_list)
+	list_for_each_entry(ch, &smd_ch_list, ch_list)
 		i += dump_ch(buf + i, max - i, ch);
 	list_for_each_entry(ch, &smd_ch_closed_list, ch_list)
 		i += dump_ch(buf + i, max - i, ch);
@@ -221,13 +218,13 @@ static void debug_create(const char *name, mode_t mode,
 	debugfs_create_file(name, mode, dent, fill, &debug_ops);
 }
 
-static int smd_debugfs_init(void)
+static void smd_debugfs_init(void)
 {
 	struct dentry *dent;
 
 	dent = debugfs_create_dir("smd", 0);
 	if (IS_ERR(dent))
-		return 1;
+		return;
 
 	debug_create("ch", 0444, dent, debug_read_ch);
 	debug_create("stat", 0444, dent, debug_read_stat);
@@ -235,8 +232,6 @@ static int smd_debugfs_init(void)
 	debug_create("version", 0444, dent, debug_read_version);
 	debug_create("tbl", 0444, dent, debug_read_alloc_tbl);
 	debug_create("build", 0444, dent, debug_read_build_id);
-
-	return 0;
 }
 
 late_initcall(smd_debugfs_init);
