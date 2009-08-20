@@ -857,7 +857,8 @@ err:
 	return;
 
 done:
-	pr_info("%s: Flush took ~%dus\n", __func__, cnt * FLUSH_WAIT_US);
+//	pr_info("%s: Flush took ~%dus\n", __func__, cnt * FLUSH_WAIT_US);
+	;
 }
 
 static void flush_endpoint_sw(struct usb_endpoint *ept)
