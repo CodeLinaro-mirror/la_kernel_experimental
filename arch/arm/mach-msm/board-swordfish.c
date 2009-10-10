@@ -22,6 +22,7 @@
 #include <linux/fs.h>
 #include <linux/android_pmem.h>
 #include <linux/msm_kgsl.h>
+#include <linux/i2c.h>
 
 #include <mach/hardware.h>
 #include <asm/mach-types.h>
@@ -45,6 +46,7 @@
 
 #include "board-swordfish.h"
 #include "devices.h"
+#include "proc_comm.h"
 
 extern int swordfish_init_mmc(void);
 
@@ -254,12 +256,192 @@ static struct msm_ts_platform_data swordfish_ts_pdata = {
 	.inv_y		= 4096,
 };
 
+extern struct sys_timer msm_timer;
+
+static struct msm_acpu_clock_platform_data swordfish_clock_data = {
+	.acpu_switch_time_us	= 20,
+	.max_speed_delta_khz	= 256000,
+	.vdd_switch_time_us	= 62,
+	.power_collapse_khz	= 128000000,
+	.wait_for_irq_khz	= 128000000,
+};
+
+void msm_serial_debug_init(unsigned int base, int irq,
+			   struct device *clk_device, int signal_irq);
+
+#ifdef CONFIG_MSM_CAMERA
+static uint32_t camera_off_gpio_table[] = {
+	/* parallel CAMERA interfaces */
+	PCOM_GPIO_CFG(0,  0, GPIO_INPUT, GPIO_PULL_DOWN, GPIO_2MA), /* DAT0 */
+	PCOM_GPIO_CFG(1,  0, GPIO_INPUT, GPIO_PULL_DOWN, GPIO_2MA), /* DAT1 */
+	PCOM_GPIO_CFG(2,  0, GPIO_INPUT, GPIO_PULL_DOWN, GPIO_2MA), /* DAT2 */
+	PCOM_GPIO_CFG(3,  0, GPIO_INPUT, GPIO_PULL_DOWN, GPIO_2MA), /* DAT3 */
+	PCOM_GPIO_CFG(4,  0, GPIO_INPUT, GPIO_PULL_DOWN, GPIO_2MA), /* DAT4 */
+	PCOM_GPIO_CFG(5,  0, GPIO_INPUT, GPIO_PULL_DOWN, GPIO_2MA), /* DAT5 */
+	PCOM_GPIO_CFG(6,  0, GPIO_INPUT, GPIO_PULL_DOWN, GPIO_2MA), /* DAT6 */
+	PCOM_GPIO_CFG(7,  0, GPIO_INPUT, GPIO_PULL_DOWN, GPIO_2MA), /* DAT7 */
+	PCOM_GPIO_CFG(8,  0, GPIO_INPUT, GPIO_PULL_DOWN, GPIO_2MA), /* DAT8 */
+	PCOM_GPIO_CFG(9,  0, GPIO_INPUT, GPIO_PULL_DOWN, GPIO_2MA), /* DAT9 */
+	PCOM_GPIO_CFG(10, 0, GPIO_INPUT, GPIO_PULL_DOWN, GPIO_2MA), /* DAT10 */
+	PCOM_GPIO_CFG(11, 0, GPIO_INPUT, GPIO_PULL_DOWN, GPIO_2MA), /* DAT11 */
+	PCOM_GPIO_CFG(12, 0, GPIO_INPUT, GPIO_PULL_DOWN, GPIO_2MA), /* PCLK */
+	PCOM_GPIO_CFG(13, 0, GPIO_INPUT, GPIO_PULL_DOWN, GPIO_2MA), /* HSYNC_IN */
+	PCOM_GPIO_CFG(14, 0, GPIO_INPUT, GPIO_PULL_DOWN, GPIO_2MA), /* VSYNC_IN */
+	PCOM_GPIO_CFG(15, 0, GPIO_OUTPUT, GPIO_NO_PULL, GPIO_2MA), /* MCLK */
+};
+
+static uint32_t camera_on_gpio_table[] = {
+	/* parallel CAMERA interfaces */
+	PCOM_GPIO_CFG(0,  1, GPIO_INPUT, GPIO_PULL_DOWN, GPIO_2MA), /* DAT0 */
+	PCOM_GPIO_CFG(1,  1, GPIO_INPUT, GPIO_PULL_DOWN, GPIO_2MA), /* DAT1 */
+	PCOM_GPIO_CFG(2,  1, GPIO_INPUT, GPIO_PULL_DOWN, GPIO_2MA), /* DAT2 */
+	PCOM_GPIO_CFG(3,  1, GPIO_INPUT, GPIO_PULL_DOWN, GPIO_2MA), /* DAT3 */
+	PCOM_GPIO_CFG(4,  1, GPIO_INPUT, GPIO_PULL_DOWN, GPIO_2MA), /* DAT4 */
+	PCOM_GPIO_CFG(5,  1, GPIO_INPUT, GPIO_PULL_DOWN, GPIO_2MA), /* DAT5 */
+	PCOM_GPIO_CFG(6,  1, GPIO_INPUT, GPIO_PULL_DOWN, GPIO_2MA), /* DAT6 */
+	PCOM_GPIO_CFG(7,  1, GPIO_INPUT, GPIO_PULL_DOWN, GPIO_2MA), /* DAT7 */
+	PCOM_GPIO_CFG(8,  1, GPIO_INPUT, GPIO_PULL_DOWN, GPIO_2MA), /* DAT8 */
+	PCOM_GPIO_CFG(9,  1, GPIO_INPUT, GPIO_PULL_DOWN, GPIO_2MA), /* DAT9 */
+	PCOM_GPIO_CFG(10, 1, GPIO_INPUT, GPIO_PULL_DOWN, GPIO_2MA), /* DAT10 */
+	PCOM_GPIO_CFG(11, 1, GPIO_INPUT, GPIO_PULL_DOWN, GPIO_2MA), /* DAT11 */
+	PCOM_GPIO_CFG(12, 0, GPIO_INPUT, GPIO_PULL_DOWN, GPIO_2MA), /* PCLK */
+	PCOM_GPIO_CFG(13, 1, GPIO_INPUT, GPIO_PULL_DOWN, GPIO_2MA), /* HSYNC_IN */
+	PCOM_GPIO_CFG(14, 1, GPIO_INPUT, GPIO_PULL_DOWN, GPIO_2MA), /* VSYNC_IN */
+	PCOM_GPIO_CFG(15, 1, GPIO_OUTPUT, GPIO_NO_PULL, GPIO_16MA), /* MCLK */
+};
+
+static void config_gpio_table(uint32_t *table, int len)
+{
+	int n;
+	unsigned id;
+	for (n = 0; n < len; n++) {
+		id = table[n];
+		msm_proc_comm(PCOM_RPC_GPIO_TLMM_CONFIG_EX, &id, 0);
+	}
+}
+
+static void config_camera_on_gpios(void)
+{
+	config_gpio_table(camera_on_gpio_table,
+		ARRAY_SIZE(camera_on_gpio_table));
+}
+
+static void config_camera_off_gpios(void)
+{
+  config_gpio_table(camera_off_gpio_table,
+		ARRAY_SIZE(camera_off_gpio_table));
+}
+
+static struct msm_camera_device_platform_data msm_camera_device_data = {
+	.camera_gpio_on  = config_camera_on_gpios,
+	.camera_gpio_off = config_camera_off_gpios,
+	.ioext.mdcphy = MSM_MDC_PHYS,
+	.ioext.mdcsz  = MSM_MDC_SIZE,
+	.ioext.appphy = MSM_CLK_CTL_PHYS,
+	.ioext.appsz  = MSM_CLK_CTL_SIZE,
+};
+
+static struct resource msm_camera_resources[] = {
+	{
+		.start  = MSM_VFE_PHYS,
+		.end    = MSM_VFE_PHYS + MSM_VFE_SIZE - 1,
+		.flags  = IORESOURCE_MEM,
+	},
+	{
+		.start  = INT_VFE,
+		.end	= INT_VFE,
+		.flags  = IORESOURCE_IRQ,
+	},
+};
+
+#ifdef CONFIG_MT9D112
+static struct msm_camera_sensor_info msm_camera_sensor_mt9d112_data = {
+        .sensor_name    = "mt9d112",
+        .sensor_reset   = 17,
+        .sensor_pwd     = 85,
+        .vcm_pwd        = 0,
+        .pdata          = &msm_camera_device_data,
+	.resource	= msm_camera_resources,
+	.num_resources	= ARRAY_SIZE(msm_camera_resources),
+};
+
+static struct platform_device msm_camera_sensor_mt9d112 = {
+        .name           = "msm_camera_mt9d112",
+        .dev            = {
+                .platform_data = &msm_camera_sensor_mt9d112_data,
+        },
+};
+#endif
+
+#ifdef CONFIG_MT9P012
+static struct msm_camera_sensor_info msm_camera_sensor_mt9p012_data = {
+        .sensor_name    = "mt9p012",
+        .sensor_reset   = 17,
+        .sensor_pwd     = 85,
+        .vcm_pwd        = 0,
+        .pdata          = &msm_camera_device_data,
+	.resource	= msm_camera_resources,
+	.num_resources	= ARRAY_SIZE(msm_camera_resources),
+};
+
+static struct platform_device msm_camera_sensor_mt9p012 = {
+        .name           = "msm_camera_mt9p012",
+        .dev            = {
+                .platform_data = &msm_camera_sensor_mt9p012_data,
+        },
+};
+#endif
+
+
+#ifdef CONFIG_S5K3E2FX
+static struct msm_camera_sensor_info msm_camera_sensor_s5k3e2fx_data = {
+        .sensor_name    = "s5k3e2fx",
+        .sensor_reset   = 17,
+        .sensor_pwd     = 85,
+        .vcm_pwd        = 0,
+        .pdata          = &msm_camera_device_data,
+	.resource	= msm_camera_resources,
+	.num_resources	= ARRAY_SIZE(msm_camera_resources),
+};
+
+static struct platform_device msm_camera_sensor_s5k3e2fx = {
+        .name           = "msm_camera_s5k3e2fx",
+        .dev            = {
+                .platform_data = &msm_camera_sensor_s5k3e2fx_data,
+        },
+};
+#endif
+
+#endif
+
+static struct i2c_board_info i2c_devices[] = {
+#ifdef CONFIG_MSM_CAMERA
+#ifdef CONFIG_MT9P012
+	{
+		I2C_BOARD_INFO("mt9p012", 0x6C >> 1),
+	},
+#endif
+#ifdef CONFIG_MT9D112
+	{
+		I2C_BOARD_INFO("mt9d112", 0x78 >> 1),
+	},
+#endif
+#ifdef CONFIG_S5K3E2FX
+	{
+		I2C_BOARD_INFO("s5k3e2fx", 0x20 >> 1),
+	},
+#endif
+
+#endif
+};
+
 static struct platform_device *devices[] __initdata = {
 #if !defined(CONFIG_MSM_SERIAL_DEBUGGER)
 	&msm_device_uart3,
 #endif
 	&msm_device_smd,
 	&msm_device_nand,
+	&msm_device_i2c,
 	&msm_device_hsusb,
 #ifdef CONFIG_USB_FUNCTION_MASS_STORAGE
 	&usb_mass_storage_device,
@@ -275,20 +457,18 @@ static struct platform_device *devices[] __initdata = {
 	&android_pmem_gpu0_device,
 	&android_pmem_gpu1_device,
 	&msm_kgsl_device,
+#ifdef CONFIG_MT9D112
+	&msm_camera_sensor_mt9d112,
+#endif
+#ifdef CONFIG_MT9P012
+	&msm_camera_sensor_mt9p012,
+#endif
+
+#ifdef CONFIG_S5K3E2FX
+	&msm_camera_sensor_s5k3e2fx,
+#endif
+
 };
-
-extern struct sys_timer msm_timer;
-
-static struct msm_acpu_clock_platform_data swordfish_clock_data = {
-	.acpu_switch_time_us	= 20,
-	.max_speed_delta_khz	= 256000,
-	.vdd_switch_time_us	= 62,
-	.power_collapse_khz	= 128000000,
-	.wait_for_irq_khz	= 128000000,
-};
-
-void msm_serial_debug_init(unsigned int base, int irq,
-			   struct device *clk_device, int signal_irq);
 
 static void __init swordfish_init(void)
 {
@@ -301,6 +481,7 @@ static void __init swordfish_init(void)
 #endif
 	msm_device_hsusb.dev.platform_data = &msm_hsusb_pdata;
 	msm_device_touchscreen.dev.platform_data = &swordfish_ts_pdata;
+	i2c_register_board_info(0, i2c_devices, ARRAY_SIZE(i2c_devices));
 	platform_add_devices(devices, ARRAY_SIZE(devices));
 	msm_hsusb_set_vbus_state(1);
 	rc = swordfish_init_mmc();
