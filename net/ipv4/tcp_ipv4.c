@@ -1913,9 +1913,12 @@ restart:
 
 			sock_hold(sk);
 			spin_unlock_bh(lock);
+
+			local_bh_disable();
 			bh_lock_sock(sk);
 			tcp_done(sk);
 			bh_unlock_sock(sk);
+			local_bh_enable();
 			sock_put(sk);
 
 			goto restart;
@@ -2533,4 +2536,3 @@ EXPORT_SYMBOL(tcp_proc_register);
 EXPORT_SYMBOL(tcp_proc_unregister);
 #endif
 EXPORT_SYMBOL(sysctl_tcp_low_latency);
-
