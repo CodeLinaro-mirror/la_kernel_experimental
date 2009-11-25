@@ -24,7 +24,14 @@
 #include <linux/io.h>
 #include <linux/kernel.h>
 #include <linux/platform_device.h>
+
+#ifdef CONFIG_USB_FUNCTION
 #include <linux/usb/mass_storage_function.h>
+#endif
+#ifdef CONFIG_USB_ANDROID
+#include <linux/usb/android_composite.h>
+#endif
+
 #include <linux/android_pmem.h>
 #include <linux/synaptics_i2c_rmi.h>
 #include <linux/a1026.h>
@@ -64,6 +71,7 @@ extern int microp_headset_has_mic(void);
 
 static void config_gpio_table(uint32_t *table, int len);
 
+#ifdef CONFIG_USB_FUNCTION
 static char *mahimahi_usb_functions[] = {
 	"usb_mass_storage",
 	"adb",
@@ -97,6 +105,7 @@ static struct msm_hsusb_product mahimahi_usb_products[] = {
 		.functions      = 0x0000000f, /* ums, adb, diag, fserial */
 	},
 };
+#endif
 
 static int mahimahi_phy_init_seq[] = {
 	0x0C, 0x31,
@@ -150,6 +159,7 @@ static struct msm_hsusb_platform_data msm_hsusb_pdata = {
 	.phy_reset		= mahimahi_usb_phy_reset,
 	.hw_reset		= mahimahi_usb_hw_reset,
 	.usb_connected		= notify_usb_connected,
+#ifdef CONFIG_USB_FUNCTION
 	.vendor_id		= 0x18d1,
 	.product_id		= 0x4e12,
 	.version		= 0x0100,
@@ -160,8 +170,10 @@ static struct msm_hsusb_platform_data msm_hsusb_pdata = {
 	.num_functions		= ARRAY_SIZE(mahimahi_usb_functions),
 	.products		= mahimahi_usb_products,
 	.num_products		= ARRAY_SIZE(mahimahi_usb_products),
+#endif
 };
 
+#ifdef CONFIG_USB_FUNCTION
 static struct usb_mass_storage_platform_data mass_storage_pdata = {
 	.nluns		= 1,
 	.buf_size	= 16384,
@@ -169,6 +181,32 @@ static struct usb_mass_storage_platform_data mass_storage_pdata = {
 	.product	= "Nexus One",
 	.release	= 0x0100,
 };
+#endif
+
+#ifdef CONFIG_USB_ANDROID
+static char *usb_functions[] = { "usb_mass_storage" };
+static char *usb_functions_adb[] = { "usb_mass_storage", "adb" };
+
+static struct android_usb_product usb_products[] = {
+	{
+		.product_id	= 0x4e11,
+		.num_functions	= ARRAY_SIZE(usb_functions),
+		.functions	= usb_functions,
+	},
+	{
+		.product_id	= 0x4e12,
+		.num_functions	= ARRAY_SIZE(usb_functions_adb),
+		.functions	= usb_functions_adb,
+	},
+};
+
+static struct usb_mass_storage_platform_data mass_storage_pdata = {
+	.nluns		= 1,
+	.vendor		= "Google, Inc.",
+	.product	= "Nexus One",
+	.release	= 0x0100,
+};
+#endif
 
 static struct platform_device usb_mass_storage_device = {
 	.name	= "usb_mass_storage",
@@ -177,6 +215,28 @@ static struct platform_device usb_mass_storage_device = {
 		.platform_data = &mass_storage_pdata,
 	},
 };
+
+#ifdef CONFIG_USB_ANDROID
+static struct android_usb_platform_data android_usb_pdata = {
+	.vendor_id	= 0x18d1,
+	.product_id	= 0x4e11,
+	.version	= 0x0100,
+	.product_name		= "Nexus One",
+	.manufacturer_name	= "Google, Inc.",
+	.num_products = ARRAY_SIZE(usb_products),
+	.products = usb_products,
+	.num_functions = ARRAY_SIZE(usb_functions_adb),
+	.functions = usb_functions_adb,
+};
+
+static struct platform_device android_usb_device = {
+	.name	= "android_usb",
+	.id		= -1,
+	.dev		= {
+		.platform_data = &android_usb_pdata,
+	},
+};
+#endif
 
 static struct platform_device mahimahi_rfkill = {
 	.name = "mahimahi_rfkill",
@@ -658,6 +718,9 @@ static struct platform_device *devices[] __initdata = {
 	&msm_device_nand,
 	&msm_device_hsusb,
 	&usb_mass_storage_device,
+#ifdef CONFIG_USB_ANDROID
+	&android_usb_device,
+#endif
 	&android_pmem_mdp_device,
 	&android_pmem_adsp_device,
 	&android_pmem_camera_device,
@@ -735,7 +798,12 @@ __tagtable(ATAG_BDADDR, parse_tag_bdaddr);
 
 static int __init board_serialno_setup(char *serialno)
 {
+#ifdef CONFIG_USB_FUNCTION
 	msm_hsusb_pdata.serial_number = serialno;
+#endif
+#ifdef CONFIG_USB_ANDROID
+	android_usb_pdata.serial_number = serialno;
+#endif
 	return 1;
 }
 __setup("androidboot.serialno=", board_serialno_setup);
