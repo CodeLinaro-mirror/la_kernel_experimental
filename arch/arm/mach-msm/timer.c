@@ -323,7 +323,8 @@ int64_t msm_timer_enter_idle(void)
 	}
 	if (delta <= 0)
 		return 0;
-	return cyc2ns(&clock->clocksource, (alarm - count) >> clock->shift);
+	return clocksource_cyc2ns((alarm - count) >> clock->shift,
+			clock->clocksource.mult, clock->clocksource.shift);
 }
 
 void msm_timer_exit_idle(int low_power)
@@ -342,13 +343,6 @@ void msm_timer_exit_idle(int low_power)
 		msm_timer_reactivate_alarm(clock);
 	}
 	clock->stopped--;
-}
-
-static inline s64 cyc2ns_orig(struct clocksource *cs, cycle_t cycles)
-{
-	u64 ret = (u64)cycles;
-	ret = (ret * cs->mult_orig) >> cs->shift;
-	return ret;
 }
 
 unsigned long long sched_clock(void)
@@ -370,17 +364,19 @@ unsigned long long sched_clock(void)
 		cs = &clock->clocksource;
 
 		last_ticks = saved_ticks;
-		saved_ticks = ticks = cs->read();
+		saved_ticks = ticks = cs->read(cs);
 		if (!saved_ticks_valid) {
 			saved_ticks_valid = 1;
 			last_ticks = ticks;
-			base -= cyc2ns_orig(cs, ticks);
+			base -= clocksource_cyc2ns(ticks, cs->mult, cs->shift);
 		}
 		if (ticks < last_ticks) {
-			base += cyc2ns_orig(cs, cs->mask);
-			base += cyc2ns_orig(cs, 1);
+			base += clocksource_cyc2ns(cs->mask,
+						   cs->mult, cs->shift);
+			base += clocksource_cyc2ns(1, cs->mult, cs->shift);
 		}
-		last_result = result = cyc2ns_orig(cs, ticks) + base;
+		last_result = result =
+			clocksource_cyc2ns(ticks, cs->mult, cs->shift) + base;
 	} else {
 		base = result = last_result;
 		saved_ticks_valid = 0;
