@@ -29,6 +29,8 @@
 #include <linux/timer.h>
 #include <linux/wakelock.h>
 
+#include <asm/stacktrace.h>
+
 #include <mach/msm_serial_debugger.h>
 #include <mach/system.h>
 #include <mach/fiq.h>
@@ -36,7 +38,6 @@
 #include "msm_serial.h"
 
 #include <linux/uaccess.h>
-#include "../kernel/stacktrace.h"
 
 static void sleep_timer_expired(unsigned long);
 
@@ -402,12 +403,15 @@ void dump_stacktrace(struct pt_regs * const regs, unsigned int depth, void *ssp)
 	dump_regs((unsigned *)regs);
 
 	if (!user_mode(regs)) {
-		unsigned long base = regs->ARM_sp & ~(THREAD_SIZE - 1);
+		struct stackframe frame;
+		frame.fp = regs->ARM_fp;
+		frame.sp = regs->ARM_sp;
+		frame.lr = regs->ARM_lr;
+		frame.pc = regs->ARM_pc;
 		dprintf("  pc: %p (%pF), lr %p (%pF), sp %p, fp %p\n",
 			regs->ARM_pc, regs->ARM_pc, regs->ARM_lr, regs->ARM_lr,
 			regs->ARM_sp, regs->ARM_fp);
-		walk_stackframe(regs->ARM_fp, base, base + THREAD_SIZE,
-				report_trace, &depth);
+		walk_stackframe(&frame, report_trace, &depth);
 		return;
 	}
 
