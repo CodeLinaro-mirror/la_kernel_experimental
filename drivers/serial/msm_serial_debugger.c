@@ -202,14 +202,14 @@ static void dump_irqs(void)
 	dprintf("irqnr       total  since-last   status  name\n");
 	for (n = 1; n < NR_IRQS; n++) {
 		struct irqaction *act = irq_desc[n].action;
-		if (!act && !kstat_cpu(0).irqs[n])
+		if (!act && !kstat_irqs(n))
 			continue;
 		dprintf("%5d: %10u %11u %8x  %s\n", n,
-			kstat_cpu(0).irqs[n],
-			kstat_cpu(0).irqs[n] - last_irqs[n],
+			kstat_irqs(n),
+			kstat_irqs(n) - last_irqs[n],
 			irq_desc[n].status,
 			(act && act->name) ? act->name : "???");
-		last_irqs[n] = kstat_cpu(0).irqs[n];
+		last_irqs[n] = kstat_irqs(n);
 	}
 }
 
