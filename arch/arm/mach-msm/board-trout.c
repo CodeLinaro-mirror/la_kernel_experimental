@@ -753,7 +753,8 @@ static void __init config_gpios(void)
 }
 
 void msm_serial_debug_init(unsigned int base, int irq,
-			   struct device *clk_device, int signal_irq);
+			   struct device *clk_device, int signal_irq,
+			   int wakeup_irq);
 
 static struct msm_acpu_clock_platform_data trout_clock_data = {
 	.acpu_switch_time_us = 20,
@@ -792,7 +793,8 @@ static void __init trout_init(void)
 #if defined(CONFIG_MSM_SERIAL_DEBUGGER)
 	if (!opt_disable_uart3)
 		msm_serial_debug_init(MSM_UART3_PHYS, INT_UART3,
-				      &msm_device_uart3.dev, 1);
+				      &msm_device_uart3.dev, 1,
+				      MSM_GPIO_TO_INT(86));
 #endif
 
 	/* gpio_configure(108, IRQF_TRIGGER_LOW); */
