@@ -1069,7 +1069,6 @@ static int akm8976_remove(struct i2c_client *client)
 	struct akm8976_data *akm = i2c_get_clientdata(client);
 	free_irq(client->irq, akm);
 	input_unregister_device(akm->input_dev);
-	i2c_detach_client(client);
 	kfree(akm);
 	return 0;
 }
