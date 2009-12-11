@@ -122,7 +122,7 @@ static enum hrtimer_restart msm_serial_clock_off(struct hrtimer *timer) {
 	struct msm_port *msm_port = container_of(timer, struct msm_port,
 						 clk_off_timer);
 	struct uart_port *port = &msm_port->uart;
-	struct circ_buf *xmit = &port->info->xmit;
+	struct circ_buf *xmit = &port->state->xmit;
 	unsigned long flags;
 	int ret = HRTIMER_NORESTART;
 
@@ -207,7 +207,7 @@ static irqreturn_t msm_rx_irq(int irq, void *dev_id)
 	/* we missed an rx while asleep - it must be a wakeup indicator
 	 */
 	if (inject_wakeup) {
-		struct tty_struct *tty = port->info->port.tty;
+		struct tty_struct *tty = port->state->port.tty;
 		tty_insert_flip_char(tty, WAKE_UP_IND, TTY_NORMAL);
 		tty_flip_buffer_push(tty);
 	}
