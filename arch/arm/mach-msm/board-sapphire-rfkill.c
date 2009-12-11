@@ -29,57 +29,52 @@ static const char bt_name[] = "brf6300";
 
 extern int sapphire_bt_fastclock_power(int on);
 
-static int bluetooth_set_power(void *data, enum rfkill_state state)
+static int bluetooth_set_power(void *data, bool blocked)
 {
-	switch (state) {
-	case RFKILL_STATE_UNBLOCKED:
+	if (!blocked) {
 		sapphire_bt_fastclock_power(1);
 		gpio_set_value(SAPPHIRE_GPIO_BT_32K_EN, 1);
 		udelay(10);
 		gpio_configure(101, GPIOF_DRIVE_OUTPUT | GPIOF_OUTPUT_HIGH);
-		break;
-	case RFKILL_STATE_SOFT_BLOCKED:
+	} else {
 		gpio_configure(101, GPIOF_DRIVE_OUTPUT | GPIOF_OUTPUT_LOW);
 		gpio_set_value(SAPPHIRE_GPIO_BT_32K_EN, 0);
 		sapphire_bt_fastclock_power(0);
-		break;
-	default:
-		printk(KERN_ERR "bad bluetooth rfkill state %d\n", state);
 	}
 	return 0;
 }
 
+static struct rfkill_ops sapphire_rfkill_ops = {
+	.set_block = bluetooth_set_power,
+};
+
 static int sapphire_rfkill_probe(struct platform_device *pdev)
 {
 	int rc = 0;
-	enum rfkill_state default_state = RFKILL_STATE_SOFT_BLOCKED;  /* off */
+	bool default_state = true;  /* off */
 
-	rfkill_set_default(RFKILL_TYPE_BLUETOOTH, default_state);
 	bluetooth_set_power(NULL, default_state);
 
-	bt_rfk = rfkill_allocate(&pdev->dev, RFKILL_TYPE_BLUETOOTH);
+	bt_rfk = rfkill_alloc(bt_name, &pdev->dev, RFKILL_TYPE_BLUETOOTH,
+			      &sapphire_rfkill_ops, NULL);
 	if (!bt_rfk)
 		return -ENOMEM;
 
-	bt_rfk->name = bt_name;
-	bt_rfk->state = default_state;
 	/* userspace cannot take exclusive control */
-	bt_rfk->user_claim_unsupported = 1;
-	bt_rfk->user_claim = 0;
-	bt_rfk->data = NULL;  /* user data */
-	bt_rfk->toggle_radio = bluetooth_set_power;
+
+	rfkill_set_states(bt_rfk, default_state, default_state);
 
 	rc = rfkill_register(bt_rfk);
 
 	if (rc)
-		rfkill_free(bt_rfk);
+		rfkill_destroy(bt_rfk);
 	return rc;
 }
 
 static int sapphire_rfkill_remove(struct platform_device *dev)
 {
 	rfkill_unregister(bt_rfk);
-	rfkill_free(bt_rfk);
+	rfkill_destroy(bt_rfk);
 
 	return 0;
 }
