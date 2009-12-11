@@ -67,6 +67,7 @@
 #include <linux/utsname.h>
 #include <linux/usb/ch9.h>
 #include <linux/usb/mass_storage_function.h>
+#include <linux/usb.h>
 #include <linux/usb_usual.h>
 #include <linux/platform_device.h>
 #include <linux/wakelock.h>
@@ -2540,8 +2541,7 @@ static void fsg_bind(struct usb_endpoint **ept, void *_ctxt)
 		curlun->dev.release = lun_release;
 		curlun->dev.parent = &fsg->pdev->dev;
 		dev_set_drvdata(&curlun->dev, fsg);
-		snprintf(curlun->dev.bus_id, BUS_ID_SIZE,
-				"lun%d", i);
+		dev_set_name(&curlun->dev, "lun%d", i);
 
 		rc = device_register(&curlun->dev);
 		if (rc != 0) {
