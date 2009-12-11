@@ -70,7 +70,8 @@ static inline void enable_wakeup_irq(unsigned int irq) {}
 static inline void disable_wakeup_irq(unsigned int irq) {}
 #else
 static inline void enable_wakeup_irq(unsigned int irq) {enable_irq(irq);}
-static inline void disable_wakeup_irq(unsigned int irq) {disable_irq(irq);}
+static inline void disable_wakeup_irq(unsigned int irq)
+						{disable_irq_nosync(irq);}
 #endif
 
 
