@@ -3503,6 +3503,7 @@ wl_iw_set_pmksa(
 {
 	struct iw_pmksa *iwpmksa;
 	uint i;
+	int ret = 0;
 	char eabuf[ETHER_ADDR_STR_LEN];
 
 	WL_TRACE_PMK(("%s: SIOCSIWPMKSA\n", dev->name));
@@ -3548,6 +3549,8 @@ wl_iw_set_pmksa(
 			}
 			pmkid_list.pmkids.npmkid--;
 		}
+		else
+			ret = -EINVAL;
 	}
 
 	else if (iwpmksa->cmd == IW_PMKSA_ADD) {
@@ -3564,6 +3567,9 @@ wl_iw_set_pmksa(
 			if (i == pmkid_list.pmkids.npmkid)
 				pmkid_list.pmkids.npmkid++;
 		}
+		else
+			ret = -EINVAL;
+
 		{
 			uint j;
 			uint k;
@@ -3576,7 +3582,7 @@ wl_iw_set_pmksa(
 			WL_TRACE_PMK(("\n"));
 		}
 	}
-	WL_TRACE_PMK(("PRINTING pmkid LIST - No of elements %d\n", pmkid_list.pmkids.npmkid));
+	WL_TRACE_PMK(("PRINTING pmkid LIST - No of elements %d, ret = %d\n", pmkid_list.pmkids.npmkid, ret));
 	for (i = 0; i < pmkid_list.pmkids.npmkid; i++) {
 		uint j;
 		WL_TRACE_PMK(("PMKID[%d]: %s = ", i,
@@ -3588,8 +3594,9 @@ wl_iw_set_pmksa(
 	}
 	WL_TRACE_PMK(("\n"));
 
-	dev_wlc_bufvar_set(dev, "pmkid_info", (char *)&pmkid_list, sizeof(pmkid_list));
-	return 0;
+	if (!ret)
+		ret = dev_wlc_bufvar_set(dev, "pmkid_info", (char *)&pmkid_list, sizeof(pmkid_list));
+	return ret;
 }
 #endif 
 #endif 
