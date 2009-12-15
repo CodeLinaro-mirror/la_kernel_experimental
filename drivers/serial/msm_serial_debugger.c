@@ -26,6 +26,7 @@
 #include <linux/kernel_stat.h>
 #include <linux/irq.h>
 #include <linux/delay.h>
+#include <linux/sched.h>
 #include <linux/timer.h>
 #include <linux/wakelock.h>
 
