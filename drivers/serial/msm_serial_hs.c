@@ -1069,7 +1069,7 @@ void msm_hs_request_clock_on_locked(struct uart_port *uport) {
 	case MSM_HS_CLK_OFF:
 		wake_lock(&msm_uport->dma_wake_lock);
 		clk_enable(msm_uport->clk);
-		disable_irq(msm_uport->rx_wakeup.irq);
+		disable_irq_nosync(msm_uport->rx_wakeup.irq);
 		/* fall-through */
 	case MSM_HS_CLK_REQUEST_OFF:
 		if (msm_uport->rx.flush == FLUSH_STOP ||
