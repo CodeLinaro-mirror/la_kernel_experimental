@@ -34,6 +34,12 @@
 #define DLOG(x...) do {} while (0)
 #endif
 
+#define IMG_LEN(rect_h, w, rect_w, bpp) (((rect_h) * w) * bpp)
+
+#define Y_TO_CRCB_RATIO(format) \
+	((format == MDP_Y_CBCR_H2V2 || format == MDP_Y_CRCB_H2V2) ?  2 :\
+	 (format == MDP_Y_CBCR_H2V1 || format == MDP_Y_CRCB_H2V1) ?  1 : 1)
+
 static uint32_t pack_pattern[] = {
 	PPP_ARRAY0(PACK_PATTERN)
 };
@@ -327,12 +333,6 @@ static void blit_blur(const struct mdp_info *mdp, struct mdp_blit_req *req,
 
 	regs->op |= (PPP_OP_SCALE_Y_ON | PPP_OP_SCALE_X_ON);
 }
-
-#define IMG_LEN(rect_h, w, rect_w, bpp) (((rect_h) * w) * bpp)
-
-#define Y_TO_CRCB_RATIO(format) \
-	((format == MDP_Y_CBCR_H2V2 || format == MDP_Y_CRCB_H2V2) ?  2 :\
-	 (format == MDP_Y_CBCR_H2V1 || format == MDP_Y_CRCB_H2V1) ?  1 : 1)
 
 static void get_len(struct mdp_img *img, struct mdp_rect *rect, uint32_t bpp,
 		    uint32_t *len0, uint32_t *len1)
