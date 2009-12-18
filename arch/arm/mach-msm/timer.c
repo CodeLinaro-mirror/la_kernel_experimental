@@ -655,7 +655,8 @@ u32 msm_read_fast_timer(void)
 	cycle_t ticks;
 	struct msm_clock *clock = &msm_clocks[MSM_CLOCK_DGT];
 	ticks = msm_read_timer_count(clock) >> MSM_DGT_SHIFT;
-	return cyc2ns_orig(&clock->clocksource, ticks);
+	return clocksource_cyc2ns(ticks, clock->clocksource.mult,
+					clock->clocksource.shift);
 }
 
 static void __init msm_timer_init(void)
