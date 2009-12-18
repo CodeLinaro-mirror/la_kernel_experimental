@@ -589,9 +589,10 @@ struct clk msm_clocks[] = {
 	CLK_ALL("vdc_clk", VDC_CLK, NULL, OFF | MINMAX),
 	CLK_ALL("vfe_clk", VFE_CLK, NULL, OFF),
 	CLK_ALL("vfe_mdc_clk", VFE_MDC_CLK, NULL, OFF),
+#if defined(CONFIG_ARCH_QSD8X50)
 	CLK_8X50("lcdc_pclk_clk", LCDC_PCLK, &msm_device_mdp.dev, 0),
 	CLK_8X50("lcdc_pad_pclk_clk", LCDC_PAD_PCLK, &msm_device_mdp.dev, 0),
 	CLK_8X50("mdp_vsync_clk", MDP_VSYNC_CLK, &msm_device_mdp.dev, 0),
-
+#endif
 	CLOCK(NULL, 0, NULL, 0, 0),
 };
