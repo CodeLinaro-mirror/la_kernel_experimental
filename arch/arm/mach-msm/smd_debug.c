@@ -286,9 +286,9 @@ void smsm_print_sleep_info(void)
 	int_info = smem_alloc(SMEM_SMSM_INT_INFO, sizeof(*int_info));
 	if (int_info)
 		pr_info("SMEM_SMSM_INT_INFO %x %x %x\n",
-			int_info->aArm_en_mask,
-			int_info->aArm_interrupts_pending,
-			int_info->aArm_wakeup_reason);
+			int_info->interrupt_mask,
+			int_info->pending_interrupts,
+			int_info->wakeup_reason);
 
 	gpio = smem_alloc(SMEM_GPIO_INT, sizeof(*gpio));
 	if (gpio) {
