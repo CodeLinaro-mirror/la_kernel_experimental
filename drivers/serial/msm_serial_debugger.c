@@ -616,7 +616,7 @@ void msm_serial_debug_init(unsigned int base, int irq,
 
 	debug_printf_nfiq(NULL, "<hit enter %sto activate fiq debugger>\n",
 				no_sleep ? "" : "twice ");
-	ignore_next_wakeup_irq = true;
+	ignore_next_wakeup_irq = !no_sleep;
 
 	msm_fiq_select(irq);
 	msm_fiq_set_handler(debug_fiq, 0);
