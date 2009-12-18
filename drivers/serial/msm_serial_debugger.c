@@ -642,6 +642,7 @@ void msm_serial_debug_init(unsigned int base, int irq,
 
 #if defined(CONFIG_MSM_SERIAL_DEBUGGER_CONSOLE)
 	register_console(&msm_serial_debug_console);
+	clk_enable(debug_clk);
 #endif
 	debugger_enable = 1;
 }
@@ -668,6 +669,7 @@ static int msm_serial_debug_remove(const char *val, struct kernel_param *kp)
 
 #if defined(CONFIG_MSM_SERIAL_DEBUGGER_CONSOLE)
 	unregister_console(&msm_serial_debug_console);
+	clk_disable(debug_clk);
 #endif
 	free_irq(init_data.wakeup_irq, 0);
 	free_irq(init_data.signal_irq, 0);
