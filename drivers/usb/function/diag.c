@@ -297,4 +297,5 @@ static int diag_get_enabled(char *buffer, struct kernel_param *kp)
 	return 1;
 }
 
-module_param_call(enabled, diag_set_enabled, diag_get_enabled, 0, 0664);
+module_param_call(enabled, diag_set_enabled,
+			diag_get_enabled, &usb_func_diag.disabled, 0664);
