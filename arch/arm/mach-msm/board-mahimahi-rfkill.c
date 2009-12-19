@@ -26,48 +26,41 @@
 static struct rfkill *bt_rfk;
 static const char bt_name[] = "bcm4329";
 
-static int bluetooth_set_power(void *data, enum rfkill_state state)
+static int bluetooth_set_power(void *data, bool blocked)
 {
-	switch (state) {
-	case RFKILL_STATE_UNBLOCKED:
+	if (!blocked) {
 		gpio_configure(MAHIMAHI_GPIO_BT_RESET_N,
 			       GPIOF_DRIVE_OUTPUT | GPIOF_OUTPUT_HIGH);
 		gpio_configure(MAHIMAHI_GPIO_BT_SHUTDOWN_N,
 			       GPIOF_DRIVE_OUTPUT | GPIOF_OUTPUT_HIGH);
-		break;
-	case RFKILL_STATE_SOFT_BLOCKED:
+	} else {
 		gpio_configure(MAHIMAHI_GPIO_BT_SHUTDOWN_N,
 			       GPIOF_DRIVE_OUTPUT | GPIOF_OUTPUT_LOW);
 		gpio_configure(MAHIMAHI_GPIO_BT_RESET_N,
 			       GPIOF_DRIVE_OUTPUT | GPIOF_OUTPUT_LOW);
-		break;
-	default:
-		pr_err("%s: bad rfkill state %d\n", __func__, state);
 	}
-
 	return 0;
 }
+
+static struct rfkill_ops mahimahi_rfkill_ops = {
+	.set_block = bluetooth_set_power,
+};
 
 static int mahimahi_rfkill_probe(struct platform_device *pdev)
 {
 	int rc = 0;
-	enum rfkill_state default_state = RFKILL_STATE_SOFT_BLOCKED;
+	bool default_state = true;  /* off */
 
-	rfkill_set_default(RFKILL_TYPE_BLUETOOTH, default_state);
 	bluetooth_set_power(NULL, default_state);
 
-	bt_rfk = rfkill_allocate(&pdev->dev, RFKILL_TYPE_BLUETOOTH);
+	bt_rfk = rfkill_alloc(bt_name, &pdev->dev, RFKILL_TYPE_BLUETOOTH,
+				&mahimahi_rfkill_ops, NULL);
 	if (!bt_rfk)
 		return -ENOMEM;
 
-	bt_rfk->name = bt_name;
-	bt_rfk->state = default_state;
+	rfkill_set_states(bt_rfk, default_state, default_state);
 
 	/* userspace cannot take exclusive control */
-	bt_rfk->user_claim_unsupported = 1;
-	bt_rfk->user_claim = 0;
-	bt_rfk->data = NULL;
-	bt_rfk->toggle_radio = bluetooth_set_power;
 
 	rc = rfkill_register(bt_rfk);
 	if (rc)
@@ -76,14 +69,14 @@ static int mahimahi_rfkill_probe(struct platform_device *pdev)
 	return 0;
 
 err_rfkill_reg:
-	rfkill_free(bt_rfk);
+	rfkill_destroy(bt_rfk);
 	return rc;
 }
 
 static int mahimahi_rfkill_remove(struct platform_device *dev)
 {
 	rfkill_unregister(bt_rfk);
-	rfkill_free(bt_rfk);
+	rfkill_destroy(bt_rfk);
 
 	return 0;
 }
