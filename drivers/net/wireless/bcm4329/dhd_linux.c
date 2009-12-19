@@ -1747,7 +1747,7 @@ dhd_attach(osl_t *osh, struct dhd_bus *bus, uint bus_hdrlen)
 	if (dhd_add_if(dhd, 0, (void *)net, net->name, NULL, 0, 0) == DHD_BAD_IF)
 		goto fail;
 
-	net->open = NULL;
+	//net->open = NULL;
 
 	init_MUTEX(&dhd->proto_sem);
 	/* Initialize other structure content */
@@ -1941,6 +1941,24 @@ dhd_iovar(dhd_pub_t *pub, int ifidx, char *name, char *cmd_buf, uint cmd_len, in
 	return ret;
 }
 
+static struct net_device_ops dhd_ops_pri = {
+	.ndo_open = dhd_open,
+	.ndo_stop = dhd_stop,
+	.ndo_get_stats = dhd_get_stats,
+	.ndo_do_ioctl = dhd_ioctl_entry,
+	.ndo_start_xmit = dhd_start_xmit,
+	.ndo_set_mac_address = dhd_set_mac_address,
+	.ndo_set_multicast_list = dhd_set_multicast_list,
+};
+
+static struct net_device_ops dhd_ops_virt = {
+	.ndo_get_stats = dhd_get_stats,
+	.ndo_do_ioctl = dhd_ioctl_entry,
+	.ndo_start_xmit = dhd_start_xmit,
+	.ndo_set_mac_address = dhd_set_mac_address,
+	.ndo_set_multicast_list = dhd_set_multicast_list,
+};
+
 int
 dhd_net_attach(dhd_pub_t *dhdp, int ifidx)
 {
@@ -1960,21 +1978,15 @@ dhd_net_attach(dhd_pub_t *dhdp, int ifidx)
 		/*
 		 * device functions for the primary interface only
 		 */
-		net->open = dhd_open;
-		net->stop = dhd_stop;
+		net->netdev_ops = &dhd_ops_pri;
 	} else {
-		net->open = net->stop = NULL;
+		net->netdev_ops = &dhd_ops_virt;
 		/*
 		 * We have to use the primary MAC for virtual interfaces
 		 */
 		memcpy(temp_addr, dhd->iflist[ifidx]->mac_addr, ETHER_ADDR_LEN);
 	}
-	net->get_stats = dhd_get_stats;
-	net->do_ioctl = dhd_ioctl_entry;
-	net->hard_start_xmit = dhd_start_xmit;
 	net->hard_header_len = ETH_HLEN + dhd->pub.hdrlen;
-	net->set_mac_address = dhd_set_mac_address;
-	net->set_multicast_list = dhd_set_multicast_list;
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 24)
 	net->ethtool_ops = &dhd_ethtool_ops;
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 24) */
@@ -2007,7 +2019,7 @@ dhd_net_attach(dhd_pub_t *dhdp, int ifidx)
 	return 0;
 
 fail:
-	net->open = NULL;
+	net->netdev_ops = NULL;
 	return BCME_ERROR;
 }
 
@@ -2068,7 +2080,7 @@ dhd_detach(dhd_pub_t *dhdp)
 
 			ifp = dhd->iflist[0];
 			ASSERT(ifp);
-			if (ifp->net->open) {
+			if (ifp->net->netdev_ops == &dhd_ops_pri) {
 				dhd_stop(ifp->net);
 				unregister_netdev(ifp->net);
 			}
