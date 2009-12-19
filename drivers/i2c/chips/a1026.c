@@ -1073,7 +1073,6 @@ err_alloc_data_failed:
 static int a1026_remove(struct i2c_client *client)
 {
 	struct a1026_platform_data *p1026data = i2c_get_clientdata(client);
-	i2c_detach_client(client);
 	kfree(p1026data);
 
 	return 0;
