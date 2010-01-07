@@ -35,9 +35,9 @@ static int bluetooth_set_power(void *data, bool blocked)
 		sapphire_bt_fastclock_power(1);
 		gpio_set_value(SAPPHIRE_GPIO_BT_32K_EN, 1);
 		udelay(10);
-		gpio_configure(101, GPIOF_DRIVE_OUTPUT | GPIOF_OUTPUT_HIGH);
+		gpio_direction_output(101, 1);
 	} else {
-		gpio_configure(101, GPIOF_DRIVE_OUTPUT | GPIOF_OUTPUT_LOW);
+		gpio_direction_output(101, 0);
 		gpio_set_value(SAPPHIRE_GPIO_BT_32K_EN, 0);
 		sapphire_bt_fastclock_power(0);
 	}
