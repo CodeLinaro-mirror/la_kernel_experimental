@@ -821,10 +821,15 @@ static void __init mahimahi_init(void)
 	config_gpio_table(misc_gpio_table, ARRAY_SIZE(misc_gpio_table));
 
 	config_gpio_table(bt_gpio_table, ARRAY_SIZE(bt_gpio_table));
+	gpio_request(MAHIMAHI_GPIO_TP_LS_EN, "tp_ls_en");
 	gpio_direction_output(MAHIMAHI_GPIO_TP_LS_EN, 0);
+	gpio_request(MAHIMAHI_GPIO_TP_EN, "tp_en");
 	gpio_direction_output(MAHIMAHI_GPIO_TP_EN, 0);
+	gpio_request(MAHIMAHI_GPIO_PROXIMITY_EN, "proximity_en");
 	gpio_direction_output(MAHIMAHI_GPIO_PROXIMITY_EN, 1);
+	gpio_request(MAHIMAHI_GPIO_COMPASS_RST_N, "compass_rst");
 	gpio_direction_output(MAHIMAHI_GPIO_COMPASS_RST_N, 1);
+	gpio_request(MAHIMAHI_GPIO_COMPASS_INT_N, "compass_int");
 	gpio_direction_input(MAHIMAHI_GPIO_COMPASS_INT_N);
 
 	/* set the gpu power rail to manual mode so clk en/dis will not
