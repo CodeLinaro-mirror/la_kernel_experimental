@@ -596,6 +596,7 @@ static struct msm_rpc_server battery_server = {
 static int __init htc_battery_init(void)
 {
 	int ret;
+	gpio_request(_GPIO_DOCK, "dock");
 	dock_in();
 	wake_lock_init(&dock_work_wake_lock, WAKE_LOCK_SUSPEND, "dock");
 	platform_driver_register(&htc_battery_driver);
