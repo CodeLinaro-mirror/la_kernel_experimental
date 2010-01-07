@@ -167,13 +167,15 @@ void mahimahi_analog_init(void)
 	pmic_spkr_set_mux_hpf_corner_freq(SPKR_FREQ_0_73KHZ);
 	pmic_mic_set_volt(MIC_VOLT_1_80V);
 
+	gpio_request(MAHIMAHI_AUD_JACKHP_EN, "aud_jackhp_en");
+	gpio_request(MAHIMAHI_BT_PCM_OUT, "bt_pcm_out");
+
 	gpio_direction_output(MAHIMAHI_AUD_JACKHP_EN, 0);
-	gpio_set_value(MAHIMAHI_AUD_JACKHP_EN, 0);
 
 	mutex_lock(&bt_sco_lock);
 	config_gpio_table(bt_sco_disable,
 			ARRAY_SIZE(bt_sco_disable));
-	gpio_set_value(MAHIMAHI_BT_PCM_OUT, 0);
+	gpio_direction_output(MAHIMAHI_BT_PCM_OUT, 0);
 	mutex_unlock(&bt_sco_lock);
 }
 
