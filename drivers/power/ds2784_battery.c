@@ -535,6 +535,17 @@ static int ds2784_battery_probe(struct platform_device *pdev)
 	di->dev = &pdev->dev;
 	di->w1_dev = pdev->dev.parent;
 
+	rc = gpio_request(GPIO_BATTERY_DETECTION, "battery_detection");
+	if (rc)
+		goto fail_gpio_battery_detection;
+	rc = gpio_request(GPIO_BATTERY_CHARGER_EN, "battery_charger_enable");
+	if (rc)
+		goto fail_gpio_battery_charger_enable;
+	rc = gpio_request(GPIO_BATTERY_CHARGER_CURRENT,
+				"battery_charger_current");
+	if (rc)
+		goto fail_gpio_battery_charger_current;
+
 	di->bat.name = "battery";
 	di->bat.type = POWER_SUPPLY_TYPE_BATTERY;
 	di->bat.properties = battery_properties;
@@ -568,6 +579,12 @@ static int ds2784_battery_probe(struct platform_device *pdev)
 fail_workqueue:
 	power_supply_unregister(&di->bat);
 fail_register:
+	gpio_free(GPIO_BATTERY_CHARGER_CURRENT);
+fail_gpio_battery_charger_current:
+	gpio_free(GPIO_BATTERY_CHARGER_EN);
+fail_gpio_battery_charger_enable:
+	gpio_free(GPIO_BATTERY_DETECTION);
+fail_gpio_battery_detection:
 	kfree(di);
 	return rc;
 }
