@@ -32,9 +32,9 @@ static int bluetooth_set_power(void *data, bool blocked)
 	if (!blocked) {
 		gpio_set_value(TROUT_GPIO_BT_32K_EN, 1);
 		udelay(10);
-		gpio_configure(101, GPIOF_DRIVE_OUTPUT | GPIOF_OUTPUT_HIGH);
+		gpio_direction_output(101, 1);
 	} else {
-		gpio_configure(101, GPIOF_DRIVE_OUTPUT | GPIOF_OUTPUT_LOW);
+		gpio_direction_output(101, 0);
 		gpio_set_value(TROUT_GPIO_BT_32K_EN, 0);
 	}
 	return 0;
