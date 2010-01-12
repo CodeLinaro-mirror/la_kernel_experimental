@@ -952,6 +952,12 @@ static void usb_reset(struct usb_info *ui)
 	ui->running = 0;
 	spin_unlock_irqrestore(&ui->lock, flags);
 
+	/* To prevent phantom packets being received by the usb core on
+	 * some devices, put the controller into reset prior to
+	 * resetting the phy. */
+	writel(2, USB_USBCMD);
+	msleep(10);
+
 #if 0
 	/* we should flush and shutdown cleanly if already running */
 	writel(0xffffffff, USB_ENDPTFLUSH);
