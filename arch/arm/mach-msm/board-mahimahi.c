@@ -94,7 +94,7 @@ static struct msm_hsusb_product mahimahi_usb_products[] = {
 	},
 	{
 		.product_id     = 0x4e17,
-		.functions      = 0x00000007, /* ums, usb, diag */
+		.functions      = 0x00000007, /* ums, adb, diag */
 	},
 	{
 		.product_id     = 0x4e14,
@@ -186,6 +186,7 @@ static struct usb_mass_storage_platform_data mass_storage_pdata = {
 #ifdef CONFIG_USB_ANDROID
 static char *usb_functions[] = { "usb_mass_storage" };
 static char *usb_functions_adb[] = { "usb_mass_storage", "adb" };
+static char *usb_functions_adb_diag[] = { "usb_mass_storage", "adb", "diag" };
 
 static struct android_usb_product usb_products[] = {
 	{
@@ -197,6 +198,11 @@ static struct android_usb_product usb_products[] = {
 		.product_id	= 0x4e12,
 		.num_functions	= ARRAY_SIZE(usb_functions_adb),
 		.functions	= usb_functions_adb,
+	},
+	{
+		.product_id	= 0x4e17,
+		.num_functions	= ARRAY_SIZE(usb_functions_adb_diag),
+		.functions	= usb_functions_adb_diag,
 	},
 };
 
@@ -225,8 +231,8 @@ static struct android_usb_platform_data android_usb_pdata = {
 	.manufacturer_name	= "Google, Inc.",
 	.num_products = ARRAY_SIZE(usb_products),
 	.products = usb_products,
-	.num_functions = ARRAY_SIZE(usb_functions_adb),
-	.functions = usb_functions_adb,
+	.num_functions = ARRAY_SIZE(usb_functions_adb_diag),
+	.functions = usb_functions_adb_diag,
 };
 
 static struct platform_device android_usb_device = {
