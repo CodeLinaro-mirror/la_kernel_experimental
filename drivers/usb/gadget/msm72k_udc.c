@@ -360,18 +360,52 @@ static void usb_ept_enable(struct msm_endpoint *ept, int yes,
 	n = readl(USB_ENDPTCTRL(ept->num));
 
 	if (in) {
-		n = (n & (~CTRL_TXT_MASK)) | CTRL_TXT_BULK;
+		n = (n & (~CTRL_TXT_MASK));
 		if (yes) {
 			n |= CTRL_TXE | CTRL_TXR;
 		} else {
 			n &= (~CTRL_TXE);
 		}
+		if (yes) {
+			switch (ep_type) {
+			case USB_ENDPOINT_XFER_BULK:
+				n |= CTRL_TXT_BULK;
+				break;
+			case USB_ENDPOINT_XFER_INT:
+				n |= CTRL_TXT_INT;
+				break;
+			case USB_ENDPOINT_XFER_ISOC:
+				n |= CTRL_TXT_ISOCH;
+				break;
+			default:
+				pr_err("%s: unsupported ep_type %d for %s\n",
+					__func__, ep_type, ept->ep.name);
+				break;
+			}
+		}
 	} else {
-		n = (n & (~CTRL_RXT_MASK)) | CTRL_RXT_BULK;
+		n = (n & (~CTRL_RXT_MASK));
 		if (yes) {
 			n |= CTRL_RXE | CTRL_RXR;
 		} else {
 			n &= ~(CTRL_RXE);
+		}
+		if (yes) {
+			switch (ep_type) {
+			case USB_ENDPOINT_XFER_BULK:
+				n |= CTRL_RXT_BULK;
+				break;
+			case USB_ENDPOINT_XFER_INT:
+				n |= CTRL_RXT_INT;
+				break;
+			case USB_ENDPOINT_XFER_ISOC:
+				n |= CTRL_RXT_ISOCH;
+				break;
+			default:
+				pr_err("%s: unsupported ep_type %d for %s\n",
+					__func__, ep_type, ept->ep.name);
+				break;
+			}
 		}
 	}
 	writel(n, USB_ENDPTCTRL(ept->num));
