@@ -57,3 +57,6 @@ obj-$(CONFIG_USB_ANDROID_ACM)	+= f_acm.o u_serial.o
 obj-$(CONFIG_USB_ANDROID_ADB)	+= f_adb.o
 obj-$(CONFIG_USB_ANDROID_MASS_STORAGE)	+= f_mass_storage.o
 
+# MSM specific
+obj-$(CONFIG_USB_ANDROID_DIAG)	+= diag.o
+
