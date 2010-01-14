@@ -1747,7 +1747,11 @@ dhd_attach(osl_t *osh, struct dhd_bus *bus, uint bus_hdrlen)
 	if (dhd_add_if(dhd, 0, (void *)net, net->name, NULL, 0, 0) == DHD_BAD_IF)
 		goto fail;
 
-	//net->open = NULL;
+#if (LINUX_VERSION_CODE <= KERNEL_VERSION(2, 6, 31))
+	net->open = NULL;
+#else
+	net->netdev_ops = NULL;
+#endif
 
 	init_MUTEX(&dhd->proto_sem);
 	/* Initialize other structure content */
@@ -1941,6 +1945,7 @@ dhd_iovar(dhd_pub_t *pub, int ifidx, char *name, char *cmd_buf, uint cmd_len, in
 	return ret;
 }
 
+#if (LINUX_VERSION_CODE > KERNEL_VERSION(2, 6, 31))
 static struct net_device_ops dhd_ops_pri = {
 	.ndo_open = dhd_open,
 	.ndo_stop = dhd_stop,
@@ -1958,6 +1963,7 @@ static struct net_device_ops dhd_ops_virt = {
 	.ndo_set_mac_address = dhd_set_mac_address,
 	.ndo_set_multicast_list = dhd_set_multicast_list,
 };
+#endif
 
 int
 dhd_net_attach(dhd_pub_t *dhdp, int ifidx)
@@ -1969,18 +1975,34 @@ dhd_net_attach(dhd_pub_t *dhdp, int ifidx)
 	DHD_TRACE(("%s: ifidx %d\n", __FUNCTION__, ifidx));
 
 	ASSERT(dhd && dhd->iflist[ifidx]);
-	ASSERT(dhd->iflist[ifidx]->net);
-	ASSERT(!dhd->iflist[ifidx]->net->open);
+	net = dhd->iflist[ifidx]->net;
+
+	ASSERT(net);
+#if (LINUX_VERSION_CODE <= KERNEL_VERSION(2, 6, 31))
+	ASSERT(!net->open);
+	net->get_stats = dhd_get_stats;
+	net->do_ioctl = dhd_ioctl_entry;
+	net->hard_start_xmit = dhd_start_xmit;
+	net->set_mac_address = dhd_set_mac_address;
+	net->set_multicast_list = dhd_set_multicast_list;
+	net->open = net->stop = NULL;
+#else
+	ASSERT(!net->netdev_ops);
+	net->netdev_ops = &dhd_ops_virt;
+#endif
 
 	/* Ok, link into the network layer... */
-	net = dhd->iflist[ifidx]->net;
 	if (ifidx == 0) {
 		/*
 		 * device functions for the primary interface only
 		 */
+#if (LINUX_VERSION_CODE <= KERNEL_VERSION(2, 6, 31))
+		net->open = dhd_open;
+		net->stop = dhd_stop;
+#else
 		net->netdev_ops = &dhd_ops_pri;
+#endif
 	} else {
-		net->netdev_ops = &dhd_ops_virt;
 		/*
 		 * We have to use the primary MAC for virtual interfaces
 		 */
@@ -2019,7 +2041,11 @@ dhd_net_attach(dhd_pub_t *dhdp, int ifidx)
 	return 0;
 
 fail:
+#if (LINUX_VERSION_CODE <= KERNEL_VERSION(2, 6, 31))
+	net->open = NULL;
+#else
 	net->netdev_ops = NULL;
+#endif
 	return BCME_ERROR;
 }
 
@@ -2080,7 +2106,11 @@ dhd_detach(dhd_pub_t *dhdp)
 
 			ifp = dhd->iflist[0];
 			ASSERT(ifp);
+#if (LINUX_VERSION_CODE <= KERNEL_VERSION(2, 6, 31))
+			if (ifp->net->open) {
+#else
 			if (ifp->net->netdev_ops == &dhd_ops_pri) {
+#endif
 				dhd_stop(ifp->net);
 				unregister_netdev(ifp->net);
 			}

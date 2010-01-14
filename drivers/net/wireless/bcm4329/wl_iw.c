@@ -277,7 +277,11 @@ dev_wlc_ioctl(
 
 		fs = get_fs();
 		set_fs(get_ds());
+#if (LINUX_VERSION_CODE <= KERNEL_VERSION(2, 6, 31))
+		ret = dev->do_ioctl(dev, &ifr, SIOCDEVPRIVATE);
+#else
 		ret = dev->netdev_ops->ndo_do_ioctl(dev, &ifr, SIOCDEVPRIVATE);
+#endif
 		set_fs(fs);
 	}
 	else {
