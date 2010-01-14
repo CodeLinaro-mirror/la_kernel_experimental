@@ -630,7 +630,6 @@ static int capella_cm3602_power(int on)
 
 static struct capella_cm3602_platform_data capella_cm3602_pdata = {
 	.power = capella_cm3602_power,
-	.p_en = MAHIMAHI_GPIO_PROXIMITY_EN,
 	.p_out = MAHIMAHI_GPIO_PROXIMITY_INT_N
 };
 
