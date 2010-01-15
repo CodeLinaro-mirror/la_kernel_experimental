@@ -1512,13 +1512,16 @@ msm72k_queue(struct usb_ep *_ep, struct usb_request *req, gfp_t gfp_flags)
 		struct msm_request *r = to_msm_request(req);
 		if (!req->length)
 			goto ep_queue_done;
-		r->gadget_complete = req->complete;
-		/* ep0_queue_ack_complete queue a receive for ACK before
-		** calling req->complete
-		*/
-		req->complete = ep0_queue_ack_complete;
-		if (ui->ep0_dir == USB_DIR_OUT)
+		if (ui->ep0_dir == USB_DIR_OUT) {
 			ep = &ui->ep0out;
+			ep->ep.driver_data = ui->ep0in.ep.driver_data;
+		} else {
+			/* ep0_queue_ack_complete queue a receive for ACK before
+			** calling req->complete
+			*/
+			r->gadget_complete = req->complete;
+			req->complete = ep0_queue_ack_complete;
+		}
 	}
 ep_queue_done:
 	return usb_ept_queue_xfer(ep, req);
