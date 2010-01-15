@@ -1780,10 +1780,14 @@ static void wl_iw_send_scan_complete(iscan_info_t *iscan)
 	union iwreq_data wrqu;
 	char extra[IW_CUSTOM_MAX + 1];
 
-		memset(&wrqu, 0, sizeof(wrqu));
-		memset(extra, 0, sizeof(extra));
-		wireless_send_event(iscan->dev, SIOCGIWSCAN, &wrqu, extra);
-		WL_TRACE(("Send Event SCAN complete\n"));
+	memset(&wrqu, 0, sizeof(wrqu));
+	memset(extra, 0, sizeof(extra));
+#if (LINUX_VERSION_CODE <= KERNEL_VERSION(2, 6, 31))
+	wireless_send_event(iscan->dev, SIOCGIWSCAN, &wrqu, extra);
+#else
+	wireless_send_event(iscan->dev, SIOCGIWSCAN, &wrqu, NULL);
+#endif
+	WL_TRACE(("Send Event SCAN complete\n"));
 #endif
 }
 static int
@@ -4316,7 +4320,7 @@ wl_iw_event(struct net_device *dev, wl_event_msg_t *e, void* data)
 	uint16 flags =  ntoh16(e->flags);
 	uint32 datalen = ntoh32(e->datalen);
 	uint32 status =  ntoh32(e->status);
-		uint32 toto;
+	uint32 toto;
 
 	memset(&wrqu, 0, sizeof(wrqu));
 	memset(extra, 0, sizeof(extra));
@@ -4458,8 +4462,14 @@ wl_iw_event(struct net_device *dev, wl_event_msg_t *e, void* data)
 		break;
 	}
 #ifndef SANDGATE2G
-	if (cmd)
+	if (cmd) {
+#if (LINUX_VERSION_CODE > KERNEL_VERSION(2, 6, 31))
+		if (cmd == SIOCGIWSCAN)
+			wireless_send_event(dev, cmd, &wrqu, NULL);
+		else
+#endif
 		wireless_send_event(dev, cmd, &wrqu, extra);
+	}
 #endif
 
 #if WIRELESS_EXT > 14
