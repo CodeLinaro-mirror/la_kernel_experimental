@@ -145,6 +145,7 @@ struct ds2784_device_info {
 	u8 slow_poll;
 
 	ktime_t last_poll;
+	ktime_t last_charge_seen;
 };
 
 #define psy_to_dev_info(x) container_of((x), struct ds2784_device_info, bat)
@@ -278,12 +279,14 @@ static int battery_get_property(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_STATUS:
 		switch (di->status.charge_source) {
 		case CHARGE_OFF:
-			val->intval = POWER_SUPPLY_STATUS_NOT_CHARGING;
+			val->intval = POWER_SUPPLY_STATUS_DISCHARGING;
 			break;
 		case CHARGE_FAST:
 		case CHARGE_SLOW:
 			if (di->status.battery_full)
 				val->intval = POWER_SUPPLY_STATUS_FULL;
+			else if (di->status.charge_mode == CHARGE_OFF)
+				val->intval = POWER_SUPPLY_STATUS_NOT_CHARGING;
 			else
 				val->intval = POWER_SUPPLY_STATUS_CHARGING;
 			break;
@@ -349,6 +352,12 @@ static void ds2784_battery_update_status(struct ds2784_device_info *di)
 
 static spinlock_t charge_state_lock;
 
+static bool check_timeout(ktime_t now, ktime_t last, int seconds)
+{
+	ktime_t timeout = ktime_add(last, ktime_set(seconds, 0));
+	return ktime_sub(timeout, now).tv64 < 0;
+}
+
 static int battery_adjust_charge_state(struct ds2784_device_info *di)
 {
 	unsigned long flags;
@@ -356,6 +365,7 @@ static int battery_adjust_charge_state(struct ds2784_device_info *di)
 	int rc = 0;
 	int temp, volt;
 	u8 charge_mode;
+	bool charge_timeout = false;
 
 	spin_lock_irqsave(&charge_state_lock, flags);
 
@@ -400,6 +410,14 @@ static int battery_adjust_charge_state(struct ds2784_device_info *di)
 			charge_mode = CHARGE_OFF;
 	}
 
+	if (di->status.current_uA > 0)
+		di->last_charge_seen = di->last_poll;
+	else if (di->last_charge_mode != CHARGE_OFF &&
+		 check_timeout(di->last_poll, di->last_charge_seen, 60 * 60)) {
+		charge_timeout = true;
+		charge_mode = CHARGE_OFF;
+	}
+
 	if (di->last_charge_mode == charge_mode)
 		goto done;
 
@@ -416,15 +434,19 @@ static int battery_adjust_charge_state(struct ds2784_device_info *di)
 			pr_info("batt: charging OFF [COOLDOWN]\n");
 		else if (di->status.battery_full)
 			pr_info("batt: charging OFF [FULL]\n");
+		else if (charge_timeout)
+			pr_info("batt: charging OFF [TIMEOUT]\n");
 		else
 			pr_info("batt: charging OFF\n");
 		break;
 	case CHARGE_SLOW:
+		di->last_charge_seen = di->last_poll;
 		gpio_direction_output(GPIO_BATTERY_CHARGER_CURRENT, 0);
 		gpio_direction_output(GPIO_BATTERY_CHARGER_EN, 0);
 		pr_info("batt: charging SLOW\n");
 		break;
 	case CHARGE_FAST:
+		di->last_charge_seen = di->last_poll;
 		gpio_direction_output(GPIO_BATTERY_CHARGER_CURRENT, 1);
 		gpio_direction_output(GPIO_BATTERY_CHARGER_EN, 0);
 		pr_info("batt: charging FAST\n");
