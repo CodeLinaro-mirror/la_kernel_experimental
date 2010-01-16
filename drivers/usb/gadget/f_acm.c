@@ -385,10 +385,10 @@ static int acm_set_alt(struct usb_function *f, unsigned intf, unsigned alt)
 			usb_ep_disable(acm->notify);
 		} else {
 			VDBG(cdev, "init acm ctrl interface %d\n", intf);
-			acm->notify_desc = ep_choose(cdev->gadget,
-					acm->hs.notify,
-					acm->fs.notify);
 		}
+		acm->notify_desc = ep_choose(cdev->gadget,
+				acm->hs.notify,
+				acm->fs.notify);
 		usb_ep_enable(acm->notify, acm->notify_desc);
 		acm->notify->driver_data = acm;
 
@@ -398,11 +398,11 @@ static int acm_set_alt(struct usb_function *f, unsigned intf, unsigned alt)
 			gserial_disconnect(&acm->port);
 		} else {
 			DBG(cdev, "activate acm ttyGS%d\n", acm->port_num);
-			acm->port.in_desc = ep_choose(cdev->gadget,
-					acm->hs.in, acm->fs.in);
-			acm->port.out_desc = ep_choose(cdev->gadget,
-					acm->hs.out, acm->fs.out);
 		}
+		acm->port.in_desc = ep_choose(cdev->gadget,
+				acm->hs.in, acm->fs.in);
+		acm->port.out_desc = ep_choose(cdev->gadget,
+				acm->hs.out, acm->fs.out);
 		gserial_connect(&acm->port, acm->port_num);
 
 	} else
