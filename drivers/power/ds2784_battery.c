@@ -23,6 +23,7 @@
 #include <linux/spinlock.h>
 
 #include <linux/android_alarm.h>
+#include <linux/delay.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/err.h>
@@ -65,6 +66,7 @@ struct battery_status {
 #define CHARGE_OFF	0
 #define CHARGE_SLOW	1
 #define CHARGE_FAST	2
+#define CHARGE_BATT_DISABLE	3 /* disable charging at battery */
 
 #define TEMP_CRITICAL	600 /* no charging at all */
 #define TEMP_HOT	500 /* no fast charge, no charge > 4.1v */
@@ -72,6 +74,7 @@ struct battery_status {
 
 #define TEMP_HOT_MAX_MV	4100 /* stop charging here when hot */
 #define TEMP_HOT_MIN_MV	3800 /* resume charging here when hot */
+#define CE_DISABLE_MIN_MV 4100
 
 #define BATTERY_LOG_MAX 1024
 #define BATTERY_LOG_MASK (BATTERY_LOG_MAX - 1)
@@ -102,7 +105,7 @@ void battery_log_status(struct battery_status *s)
 }
 
 static const char *battery_source[3] = { "none", " usb", "  ac" };
-static const char *battery_mode[3] = { " off", "slow", "fast" };
+static const char *battery_mode[4] = { " off", "slow", "fast", "full" };
 
 static int battery_log_print(struct seq_file *sf, void *private)
 {
@@ -221,6 +224,24 @@ static void ds2784_parse_data(u8 *raw, struct battery_status *s)
 			  raw[DS2784_REG_RAAC_LSB]) * 1600;
 }
 
+static int ds2784_set_cc(struct ds2784_device_info *di, bool enable)
+{
+	int ret;
+
+	if (enable)
+		di->raw[DS2784_REG_PORT] |= 0x02;
+	else
+		di->raw[DS2784_REG_PORT] &= ~0x02;
+	ret = w1_ds2784_write(di->w1_dev, di->raw + DS2784_REG_PORT,
+			      DS2784_REG_PORT, 1);
+	if (ret != 1) {
+		dev_warn(di->dev, "call to w1_ds2784_write failed (0x%p)\n",
+			 di->w1_dev);
+		return 1;
+	}
+	return 0;
+}
+
 static int ds2784_battery_read_status(struct ds2784_device_info *di)
 {
 	int ret, start, count;
@@ -285,7 +306,8 @@ static int battery_get_property(struct power_supply *psy,
 		case CHARGE_SLOW:
 			if (di->status.battery_full)
 				val->intval = POWER_SUPPLY_STATUS_FULL;
-			else if (di->status.charge_mode == CHARGE_OFF)
+			else if (di->status.charge_mode == CHARGE_OFF ||
+				 di->status.charge_mode == CHARGE_BATT_DISABLE)
 				val->intval = POWER_SUPPLY_STATUS_NOT_CHARGING;
 			else
 				val->intval = POWER_SUPPLY_STATUS_CHARGING;
@@ -350,7 +372,7 @@ static void ds2784_battery_update_status(struct ds2784_device_info *di)
 		power_supply_changed(&di->bat);
 }
 
-static spinlock_t charge_state_lock;
+static DEFINE_MUTEX(charge_state_lock);
 
 static bool check_timeout(ktime_t now, ktime_t last, int seconds)
 {
@@ -360,14 +382,13 @@ static bool check_timeout(ktime_t now, ktime_t last, int seconds)
 
 static int battery_adjust_charge_state(struct ds2784_device_info *di)
 {
-	unsigned long flags;
 	unsigned source;
 	int rc = 0;
 	int temp, volt;
 	u8 charge_mode;
 	bool charge_timeout = false;
 
-	spin_lock_irqsave(&charge_state_lock, flags);
+	mutex_lock(&charge_state_lock);
 
 	temp = di->status.temp_C;
 	volt = di->status.voltage_uV / 1000;
@@ -384,13 +405,13 @@ static int battery_adjust_charge_state(struct ds2784_device_info *di)
 	 */
 	if (di->status.status_reg & 0x80) {
 		di->status.battery_full = 1;
-		charge_mode = CHARGE_OFF;
+		charge_mode = CHARGE_BATT_DISABLE;
 	} else
 		di->status.battery_full = 0;
 
 	if (temp >= TEMP_HOT) {
 		if (temp >= TEMP_CRITICAL)
-			charge_mode = CHARGE_OFF;
+			charge_mode = CHARGE_BATT_DISABLE;
 
 		/* once we charge to max voltage when hot, disable
 		 * charging until the temp drops or the voltage drops
@@ -407,16 +428,39 @@ static int battery_adjust_charge_state(struct ds2784_device_info *di)
 		if ((temp < TEMP_WARM) || (volt <= TEMP_HOT_MIN_MV))
 			di->status.cooldown = 0;
 		else
-			charge_mode = CHARGE_OFF;
+			charge_mode = CHARGE_BATT_DISABLE;
 	}
 
-	if (di->status.current_uA > 0)
+	if (di->status.current_uA > 1024)
 		di->last_charge_seen = di->last_poll;
 	else if (di->last_charge_mode != CHARGE_OFF &&
 		 check_timeout(di->last_poll, di->last_charge_seen, 60 * 60)) {
-		charge_timeout = true;
-		charge_mode = CHARGE_OFF;
+		if (di->last_charge_mode == CHARGE_BATT_DISABLE) {
+			/* The charger is only powering the phone. Toggle the
+			 * enable line periodically to prevent auto shutdown.
+			 */
+			di->last_charge_seen = di->last_poll;
+			pr_info("batt: charging POKE CHARGER\n");
+			gpio_direction_output(GPIO_BATTERY_CHARGER_EN, 1);
+			udelay(10);
+			gpio_direction_output(GPIO_BATTERY_CHARGER_EN, 0);
+		} else {
+			/* The charger has probably stopped charging. Turn it
+			 * off until the next sample period.
+			 */
+			charge_timeout = true;
+			charge_mode = CHARGE_OFF;
+		}
 	}
+
+	if (source == CHARGE_OFF)
+		charge_mode = CHARGE_OFF;
+
+	/* Don't use CHARGE_BATT_DISABLE unless the voltage is high since the
+	 * voltage drop over the discharge-path diode can cause a shutdown.
+	 */
+	if (charge_mode == CHARGE_BATT_DISABLE && volt < CE_DISABLE_MIN_MV)
+		charge_mode = CHARGE_OFF;
 
 	if (di->last_charge_mode == charge_mode)
 		goto done;
@@ -428,6 +472,7 @@ static int battery_adjust_charge_state(struct ds2784_device_info *di)
 	case CHARGE_OFF:
 		/* CHARGER_EN is active low.  Set to 1 to disable. */
 		gpio_direction_output(GPIO_BATTERY_CHARGER_EN, 1);
+		ds2784_set_cc(di, true);
 		if (temp >= TEMP_CRITICAL)
 			pr_info("batt: charging OFF [OVERTEMP]\n");
 		else if (di->status.cooldown)
@@ -439,14 +484,31 @@ static int battery_adjust_charge_state(struct ds2784_device_info *di)
 		else
 			pr_info("batt: charging OFF\n");
 		break;
+	case CHARGE_BATT_DISABLE:
+		di->last_charge_seen = di->last_poll;
+		ds2784_set_cc(di, false);
+		gpio_direction_output(GPIO_BATTERY_CHARGER_CURRENT,
+					source == CHARGE_FAST);
+		gpio_direction_output(GPIO_BATTERY_CHARGER_EN, 0);
+		if (temp >= TEMP_CRITICAL)
+			pr_info("batt: charging BATTOFF [OVERTEMP]\n");
+		else if (di->status.cooldown)
+			pr_info("batt: charging BATTOFF [COOLDOWN]\n");
+		else if (di->status.battery_full)
+			pr_info("batt: charging BATTOFF [FULL]\n");
+		else
+			pr_info("batt: charging BATTOFF [UNKNOWN]\n");
+		break;
 	case CHARGE_SLOW:
 		di->last_charge_seen = di->last_poll;
+		ds2784_set_cc(di, true);
 		gpio_direction_output(GPIO_BATTERY_CHARGER_CURRENT, 0);
 		gpio_direction_output(GPIO_BATTERY_CHARGER_EN, 0);
 		pr_info("batt: charging SLOW\n");
 		break;
 	case CHARGE_FAST:
 		di->last_charge_seen = di->last_poll;
+		ds2784_set_cc(di, true);
 		gpio_direction_output(GPIO_BATTERY_CHARGER_CURRENT, 1);
 		gpio_direction_output(GPIO_BATTERY_CHARGER_EN, 0);
 		pr_info("batt: charging FAST\n");
@@ -454,7 +516,7 @@ static int battery_adjust_charge_state(struct ds2784_device_info *di)
 	}
 	rc = 1;
 done:
-	spin_unlock_irqrestore(&charge_state_lock, flags);
+	mutex_unlock(&charge_state_lock);
 	return rc;
 }
 
@@ -656,7 +718,6 @@ static struct file_operations battery_log_fops = {
 static int __init ds2784_battery_init(void)
 {
 	debugfs_create_file("battery_log", 0444, NULL, NULL, &battery_log_fops);
-	spin_lock_init(&charge_state_lock);
 	wake_lock_init(&vbus_wake_lock, WAKE_LOCK_SUSPEND, "vbus_present");
 	return platform_driver_register(&ds2784_battery_driver);
 }
