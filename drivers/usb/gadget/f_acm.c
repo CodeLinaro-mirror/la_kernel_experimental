@@ -14,10 +14,10 @@
 
 #include <linux/kernel.h>
 #include <linux/device.h>
+#include <linux/usb/android_composite.h>
 
 #include "u_serial.h"
 #include "gadget_chips.h"
-#include "linux/usb/android_composite.h"
 
 
 /*
@@ -763,6 +763,8 @@ int __init acm_bind_config(struct usb_configuration *c, u8 port_num)
 	return status;
 }
 
+#ifdef CONFIG_USB_ANDROID_ACM
+
 int acm_function_bind_config(struct usb_configuration *c)
 {
 	int ret = acm_bind_config(c, 0);
@@ -778,7 +780,10 @@ static struct android_usb_function acm_function = {
 
 static int __init init(void)
 {
+	printk(KERN_INFO "f_acm init\n");
 	android_register_function(&acm_function);
 	return 0;
 }
 module_init(init);
+
+#endif /* CONFIG_USB_ANDROID_ACM */
