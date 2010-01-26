@@ -21,6 +21,7 @@
 #include <linux/fs.h>
 #include <linux/android_pmem.h>
 #include <mach/msm_adsp.h>
+#include <linux/sched.h>
 #include <linux/delay.h>
 #include <linux/wait.h>
 #include "msm_vfe7x.h"
