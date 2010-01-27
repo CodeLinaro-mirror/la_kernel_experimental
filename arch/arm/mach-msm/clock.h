@@ -29,6 +29,17 @@
 #define CLKFLAG_ARCH_QSD8X50		(0x00020000)
 #define CLKFLAG_ARCH_ALL		(0xffff0000)
 
+struct clk_ops {
+	int (*enable)(unsigned id);
+	void (*disable)(unsigned id);
+	int (*set_rate)(unsigned id, unsigned rate);
+	int (*set_min_rate)(unsigned id, unsigned rate);
+	int (*set_max_rate)(unsigned id, unsigned rate);
+	int (*set_flags)(unsigned id, unsigned flags);
+	unsigned (*get_rate)(unsigned id);
+	bool (*is_enabled)(unsigned id);
+};
+
 struct clk {
 	uint32_t id;
 	uint32_t count;
@@ -37,6 +48,7 @@ struct clk {
 	struct hlist_node list;
 	struct device *dev;
 	struct hlist_head handles;
+	struct clk_ops *ops;
 };
 
 struct clk_handle {

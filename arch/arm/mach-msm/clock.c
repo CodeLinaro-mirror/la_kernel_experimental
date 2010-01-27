@@ -41,7 +41,7 @@ static int clk_set_rate_locked(struct clk *clk, unsigned long rate);
 /*
  * glue for the proc_comm interface
  */
-static inline int pc_clk_enable(unsigned id)
+static int pc_clk_enable(unsigned id)
 {
 	/* gross hack to set axi clk rate when turning on uartdm clock */
 	if (id == UART1DM_CLK && axi_clk)
@@ -49,14 +49,14 @@ static inline int pc_clk_enable(unsigned id)
 	return msm_proc_comm(PCOM_CLKCTL_RPC_ENABLE, &id, NULL);
 }
 
-static inline void pc_clk_disable(unsigned id)
+static void pc_clk_disable(unsigned id)
 {
 	msm_proc_comm(PCOM_CLKCTL_RPC_DISABLE, &id, NULL);
 	if (id == UART1DM_CLK && axi_clk)
 		clk_set_rate_locked(axi_clk, 0);
 }
 
-static inline int pc_clk_set_rate(unsigned id, unsigned rate)
+static int pc_clk_set_rate(unsigned id, unsigned rate)
 {
 	return msm_proc_comm(PCOM_CLKCTL_RPC_SET_RATE, &id, &rate);
 }
@@ -66,17 +66,17 @@ static int pc_clk_set_min_rate(unsigned id, unsigned rate)
 	return msm_proc_comm(PCOM_CLKCTL_RPC_MIN_RATE, &id, &rate);
 }
 
-static inline int pc_clk_set_max_rate(unsigned id, unsigned rate)
+static int pc_clk_set_max_rate(unsigned id, unsigned rate)
 {
 	return msm_proc_comm(PCOM_CLKCTL_RPC_MAX_RATE, &id, &rate);
 }
 
-static inline int pc_clk_set_flags(unsigned id, unsigned flags)
+static int pc_clk_set_flags(unsigned id, unsigned flags)
 {
 	return msm_proc_comm(PCOM_CLKCTL_RPC_SET_FLAGS, &id, &flags);
 }
 
-static inline unsigned pc_clk_get_rate(unsigned id)
+static unsigned pc_clk_get_rate(unsigned id)
 {
 	if (msm_proc_comm(PCOM_CLKCTL_RPC_RATE, &id, NULL))
 		return 0;
@@ -84,7 +84,7 @@ static inline unsigned pc_clk_get_rate(unsigned id)
 		return id;
 }
 
-static inline unsigned pc_clk_is_enabled(unsigned id)
+static bool pc_clk_is_enabled(unsigned id)
 {
 	if (msm_proc_comm(PCOM_CLKCTL_RPC_ENABLED, &id, NULL))
 		return 0;
@@ -97,6 +97,17 @@ static inline int pc_pll_request(unsigned id, unsigned on)
 	on = !!on;
 	return msm_proc_comm(PCOM_CLKCTL_RPC_PLL_REQUEST, &id, &on);
 }
+
+static struct clk_ops pcom_clk_ops = {
+	.enable = pc_clk_enable,
+	.disable = pc_clk_disable,
+	.set_rate = pc_clk_set_rate,
+	.set_min_rate = pc_clk_set_min_rate,
+	.set_max_rate = pc_clk_set_max_rate,
+	.set_flags = pc_clk_set_flags,
+	.get_rate = pc_clk_get_rate,
+	.is_enabled = pc_clk_is_enabled,
+};
 
 static struct clk *clk_allocate_handle(struct clk *sclk)
 {
@@ -179,7 +190,7 @@ int clk_enable(struct clk *clk)
 	clk = source_clk(clk);
 	clk->count++;
 	if (clk->count == 1)
-		pc_clk_enable(clk->id);
+		clk->ops->enable(clk->id);
 	spin_unlock_irqrestore(&clocks_lock, flags);
 	return 0;
 }
@@ -193,7 +204,7 @@ void clk_disable(struct clk *clk)
 	BUG_ON(clk->count == 0);
 	clk->count--;
 	if (clk->count == 0)
-		pc_clk_disable(clk->id);
+		clk->ops->disable(clk->id);
 	spin_unlock_irqrestore(&clocks_lock, flags);
 }
 EXPORT_SYMBOL(clk_disable);
@@ -201,7 +212,7 @@ EXPORT_SYMBOL(clk_disable);
 unsigned long clk_get_rate(struct clk *clk)
 {
 	clk = source_clk(clk);
-	return pc_clk_get_rate(clk->id);
+	return clk->ops->get_rate(clk->id);
 }
 EXPORT_SYMBOL(clk_get_rate);
 
@@ -230,18 +241,18 @@ static int clk_set_rate_locked(struct clk *clk, unsigned long rate)
 	}
 
 	if (clk->flags & CLKFLAG_USE_MAX_TO_SET) {
-		ret = pc_clk_set_max_rate(clk->id, rate);
+		ret = clk->ops->set_max_rate(clk->id, rate);
 		if (ret)
 			goto err;
 	}
 	if (clk->flags & CLKFLAG_USE_MIN_TO_SET) {
-		ret = pc_clk_set_min_rate(clk->id, rate);
+		ret = clk->ops->set_min_rate(clk->id, rate);
 		if (ret)
 			goto err;
 	}
 
 	if (!(clk->flags & (CLKFLAG_USE_MAX_TO_SET | CLKFLAG_USE_MIN_TO_SET)))
-		ret = pc_clk_set_rate(clk->id, rate);
+		ret = clk->ops->set_rate(clk->id, rate);
 err:
 	return ret;
 }
@@ -276,7 +287,7 @@ int clk_set_flags(struct clk *clk, unsigned long flags)
 	if (clk == NULL || IS_ERR(clk))
 		return -EINVAL;
 	clk = source_clk(clk);
-	return pc_clk_set_flags(clk->id, flags);
+	return clk->ops->set_flags(clk->id, flags);
 }
 EXPORT_SYMBOL(clk_set_flags);
 
@@ -326,6 +337,7 @@ void __init msm_clock_init(void)
 	spin_lock_init(&clocks_lock);
 	mutex_lock(&clocks_mutex);
 	for (clk = msm_clocks; clk && clk->name; clk++) {
+		clk->ops = &pcom_clk_ops;
 		hlist_add_head(&clk->list, &clocks);
 	}
 	mutex_unlock(&clocks_mutex);
@@ -394,7 +406,7 @@ static int clk_info_seq_show(struct seq_file *seq, void *v)
 		seq_printf(seq, "    Requested rate    %ld\n", clkh->rate);
 	spin_unlock_irqrestore(&clocks_lock, flags);
 
-	seq_printf(seq, "  Enabled     %d\n", pc_clk_is_enabled(clk->id));
+	seq_printf(seq, "  Enabled     %d\n", clk->ops->is_enabled(clk->id));
 	seq_printf(seq, "  Rate        %ld\n", clk_get_rate(clk));
 
 	seq_printf(seq, "\n");
@@ -465,7 +477,7 @@ static int __init clock_late_init(void)
 			spin_lock_irqsave(&clocks_lock, flags);
 			if (!clk->count) {
 				count++;
-				pc_clk_disable(clk->id);
+				clk->ops->disable(clk->id);
 			}
 			spin_unlock_irqrestore(&clocks_lock, flags);
 		}
