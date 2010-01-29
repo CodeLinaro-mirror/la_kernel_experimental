@@ -57,6 +57,9 @@ static struct map_desc msm_io_desc[] __initdata = {
 #ifdef CONFIG_ARCH_MSM_SCORPION
 	MSM_DEVICE(TCSR),
 #endif
+#ifdef CONFIG_ARCH_MSM7X30
+	MSM_DEVICE(GCC),
+#endif
 	{
 		.virtual =  (unsigned long) MSM_SHARED_RAM_BASE,
 		.pfn =      __phys_to_pfn(MSM_SHARED_RAM_PHYS),
