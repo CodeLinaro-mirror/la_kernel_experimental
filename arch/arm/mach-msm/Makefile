@@ -51,6 +51,8 @@ obj-$(CONFIG_MACH_MAHIMAHI) += board-mahimahi-microp.o
 obj-$(CONFIG_MACH_MAHIMAHI) += htc_acoustic_qsd.o
 obj-$(CONFIG_MACH_MAHIMAHI) += board-mahimahi-flashlight.o
 
+obj-$(CONFIG_MACH_SURF7X30) += board-surf7x30.o
+
 obj-$(CONFIG_TROUT_BATTCHG) += htc_battery.o
 obj-$(CONFIG_HTC_PWRSPLY) += htc_power_supply.o
 
