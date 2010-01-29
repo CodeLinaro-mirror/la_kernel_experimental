@@ -1,5 +1,5 @@
 obj-y += io.o irq.o timer.o dma.o memory.o
-obj-$(CONFIG_ARCH_MSM_SCORPION) += sirc.o
+obj-$(CONFIG_ARCH_QSD8X50) += sirc.o
 obj-y += devices.o
 obj-y += proc_comm.o
 obj-y += vreg.o
@@ -7,6 +7,8 @@ obj-y += pmic.o
 obj-$(CONFIG_ARCH_MSM_ARM11) += acpuclock-arm11.o idle.o
 obj-$(CONFIG_ARCH_MSM_SCORPION) += arch-init-scorpion.o idle-v7.o
 obj-$(CONFIG_ARCH_QSD8X50) += acpuclock-qsd8x50.o
+obj-$(CONFIG_ARCH_MSM7X30) += acpuclock-7x30.o
+
 obj-y += clock.o
 obj-y += gpio.o generic_gpio.o
 obj-y += nand_partitions.o

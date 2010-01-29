@@ -15,6 +15,11 @@ config ARCH_QSD8X50
 	select CPU_V7
 	select VERIFY_PERMISSION_FAULT
 
+config ARCH_MSM7X30
+	bool "MSM7x30 / QSD8x55"
+	select ARCH_MSM_SCORPION
+	select CPU_V7
+
 endchoice
 
 config ARCH_MSM_ARM11
