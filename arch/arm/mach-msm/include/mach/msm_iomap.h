@@ -171,15 +171,19 @@
 #endif
 
 #if defined(CONFIG_ARCH_MSM_SCORPION)
-#define MSM_TCSR_BASE  IOMEM(0xF8008000)
-#define MSM_TCSR_PHYS  0xA8700000
-#define MSM_TCSR_SIZE  SZ_4K
+#define MSM_TCSR_BASE         IOMEM(0xF8008000)
+#define MSM_TCSR_PHYS         _PHYS(~0,0xAB600000,0xA8700000)
+#define MSM_TCSR_SIZE         SZ_4K
 #endif
 
 #if defined(CONFIG_ARCH_MSM7X30)
 #define MSM_GCC_BASE          IOMEM(0xF8009000)
 #define MSM_GCC_PHYS          0xC0182000
 #define MSM_GCC_SIZE          SZ_4K
+
+#define MSM_ACC_BASE          IOMEM(0xF800A000)
+#define MSM_ACC_PHYS          0xC0101000
+#define MSM_ACC_SIZE          SZ_4K
 #endif
 
 #endif
