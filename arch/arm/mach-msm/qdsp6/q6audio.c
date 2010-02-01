@@ -113,6 +113,12 @@ void q6audio_register_analog_ops(struct q6audio_analog_ops *ops)
 	analog_ops = ops;
 }
 
+void q6audio_set_acdb_file(char* filename)
+{
+	if (filename)
+		strncpy(acdb_file, filename, sizeof(acdb_file)-1);
+}
+
 static struct q6_device_info *q6_lookup_device(uint32_t device_id)
 {
 	struct q6_device_info *di = q6_audio_devices;
