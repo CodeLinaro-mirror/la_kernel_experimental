@@ -41,6 +41,20 @@ struct audio_client {
 	uint32_t flags;
 };
 
+#define Q6_HW_HANDSET	0
+#define Q6_HW_HEADSET	1
+#define Q6_HW_SPEAKER	2
+#define Q6_HW_TTY	3
+#define Q6_HW_BT_SCO	4
+#define Q6_HW_BT_A2DP	5
+
+#define Q6_HW_COUNT	6
+
+struct q6_hw_info {
+	int min_gain;
+	int max_gain;
+};
+
 /* Obtain a 16bit signed, interleaved audio channel of the specified
  * rate (Hz) and channels (1 or 2), with two buffers of bufsz bytes.
  */
@@ -76,6 +90,7 @@ struct q6audio_analog_ops {
 	void (*bt_sco_enable)(int en);
 	void (*int_mic_enable)(int en);
 	void (*ext_mic_enable)(int en);
+	int (*get_rx_vol)(uint8_t hw, int level);
 };
 
 void q6audio_register_analog_ops(struct q6audio_analog_ops *ops);

@@ -41,12 +41,6 @@
 #else
 #define TRACE(x...) do{}while(0)
 #endif
-struct q6_hw_info {
-	int min_gain;
-	int max_gain;
-};
-
-/* TODO: provide mechanism to configure from board file */
 
 static struct q6_hw_info q6_audio_hw[Q6_HW_COUNT] = {
 	[Q6_HW_HANDSET] = {
@@ -167,11 +161,13 @@ static uint32_t q6_device_to_rate(uint32_t device_id)
 int q6_device_volume(uint32_t device_id, int level)
 {
 	struct q6_device_info *di = q6_lookup_device(device_id);
-	struct q6_hw_info *hw;
-
-	hw = &q6_audio_hw[di->hw];
-
-	return hw->min_gain + ((hw->max_gain - hw->min_gain) * level) / 100;
+	if (analog_ops->get_rx_vol)
+		return analog_ops->get_rx_vol(di->hw, level);
+	else {
+		struct q6_hw_info *hw;
+		hw = &q6_audio_hw[di->hw];
+		return hw->min_gain + ((hw->max_gain - hw->min_gain) * level) / 100;
+	}
 }
 
 static inline int adie_open(struct dal_client *client) 
