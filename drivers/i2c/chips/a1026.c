@@ -928,6 +928,14 @@ a1026_ioctl(struct inode *inode, struct file *file, unsigned int cmd,
 		if (copy_to_user(argp, &msg, 4))
 			return -EFAULT;
 		break;
+	case A1026_WRITE_MSG:
+		rc = chk_wakeup_a1026();
+		if (rc < 0)
+			return rc;
+		if (copy_from_user(msg, argp, sizeof(msg)))
+			return -EFAULT;
+		rc = a1026_i2c_write(msg, 4);
+		break;
 	case A1026_SYNC_CMD:
 		rc = chk_wakeup_a1026();
 		if (rc < 0)
