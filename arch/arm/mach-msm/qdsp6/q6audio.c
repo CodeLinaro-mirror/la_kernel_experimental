@@ -1536,11 +1536,6 @@ struct audio_client *q6audio_open_mp3(uint32_t bufsz, uint32_t rate,
 	audio_mp3_open(ac, bufsz, rate, channels);
 	audio_command(ac, ADSP_AUDIO_IOCTL_CMD_SESSION_START);
 
-	mutex_lock(&audio_path_lock);
-	audio_rx_mute(ac_control, audio_rx_device_id, 0);
-	audio_rx_volume(ac_control, audio_rx_device_id,
-			q6_device_volume(audio_rx_device_id, rx_vol_level));
-	mutex_unlock(&audio_path_lock);
 	return ac;
 }
 
