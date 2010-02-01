@@ -65,6 +65,7 @@ struct msm_vfe_callback {
 		gfp_t gfp);
 	void* (*vfe_alloc)(int, void *syncdata, gfp_t gfp);
 	void (*vfe_free)(void *ptr);
+	int (*flash_ctrl)(void *syncdata, int level);
 };
 
 struct msm_camvfe_fn {

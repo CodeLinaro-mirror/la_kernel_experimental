@@ -45,6 +45,7 @@ struct msm_vfe8x_ctrl {
 	struct vfe_irq_composite_mask_config vfeIrqCompositeMaskLocal;
 	struct vfe_module_enable vfeModuleEnableLocal;
 	struct vfe_camif_cfg_data vfeCamifConfigLocal;
+	struct vfe_cmds_camif_epoch vfeCamifEpoch1Local;
 	struct vfe_interrupt_mask vfeImaskLocal;
 	struct vfe_stats_cmd_data vfeStatsCmdLocal;
 	struct vfe_bus_cfg_data vfeBusConfigLocal;
@@ -726,6 +727,7 @@ static void vfe_proc_ops(enum VFE_MESSAGE_ID id, void *data)
 {
 	struct msm_vfe_resp *rp;
 	struct vfe_message *msg;
+	struct msm_sync *sync = (struct msm_sync *)ctrl->syncdata;
 
 	CDBG("ctrl->vfeOperationMode = %d, msgId = %d\n",
 	     ctrl->vfeOperationMode, id);
@@ -758,6 +760,15 @@ static void vfe_proc_ops(enum VFE_MESSAGE_ID id, void *data)
 	rp->type = vfe_funcs[id].rt;
 	rp->evt_msg.type = MSM_CAMERA_MSG;
 	rp->evt_msg.msg_id = id;
+
+	/* Turn off the flash if epoch1 is enabled and snapshot is done. */
+	if (ctrl->vfeCamifEpoch1Local.enable &&
+			ctrl->vfeOperationMode ==
+				VFE_START_OPERATION_MODE_SNAPSHOT &&
+			id == VFE_MSG_ID_SNAPSHOT_DONE) {
+		ctrl->resp->flash_ctrl(sync, MSM_CAMERA_LED_OFF);
+		ctrl->vfeCamifEpoch1Local.enable = 0;
+	}
 
 	if (!vfe_funcs[id].fn) {
 		rp->evt_msg.len = 0;
@@ -828,6 +839,27 @@ static void vfe_process_error_irq(struct isr_queue_cmd *qcmd)
 
 	if (irqstatus->violationIrq)
 		pr_err("%s: violation irq\n", __func__);
+}
+
+/* We use epoch1 interrupt to control flash timing. The purpose is to reduce the
+ * flash duration as much as possible. Userspace driver has no way to control
+ * the exactly timing like VFE. Currently we skip a frame during snapshot.
+ * We want to fire the flash in the middle of the first frame. Epoch1 interrupt
+ * allows us to set a line index and we will get an interrupt when VFE reaches
+ * the line. Userspace driver sets the line index in camif configuration. VFE
+ * will fire the flash in high mode when it gets the epoch1 interrupt. Flash
+ * will be turned off after snapshot is done.
+ */
+static void vfe_process_camif_epoch1_irq(void)
+{
+	/* Turn on the flash. */
+	struct msm_sync *sync = (struct msm_sync *)ctrl->syncdata;
+	ctrl->resp->flash_ctrl(sync, MSM_CAMERA_LED_HIGH);
+
+	/* Disable the epoch1 interrupt. */
+	ctrl->vfeImaskLocal.camifEpoch1Irq = FALSE;
+	ctrl->vfeImaskPacked = vfe_irq_pack(ctrl->vfeImaskLocal);
+	vfe_program_irq_mask(ctrl->vfeImaskPacked);
 }
 
 static void vfe_process_camif_sof_irq(void)
@@ -1596,10 +1628,11 @@ static void __vfe_do_tasklet(struct isr_queue_cmd *qcmd)
 	if (ctrl->vstate != VFE_STATE_ACTIVE)
 		return;
 
-#if 0
-	if (qcmd->vfeInterruptStatus.camifEpoch1Irq)
-		vfe_proc_ops(VFE_MSG_ID_EPOCH1);
+	if (qcmd->vfeInterruptStatus.camifEpoch1Irq) {
+		vfe_process_camif_epoch1_irq();
+	}
 
+#if 0
 	if (qcmd->vfeInterruptStatus.camifEpoch2Irq)
 		vfe_proc_ops(VFE_MSG_ID_EPOCH2);
 #endif
@@ -3582,6 +3615,27 @@ void vfe_axi_output_config(struct vfe_cmd_axi_output_config *in)
 
 	/* call to program the registers. */
 	vfe_axi_output(in, &ctrl->viewPath, &ctrl->encPath, axioutpw);
+}
+
+void vfe_epoch1_config(struct vfe_cmds_camif_epoch *in)
+{
+	struct vfe_epoch1cfg cmd;
+	memset(&cmd, 0, sizeof(cmd));
+	/* determine if epoch interrupt needs to be enabled. */
+	if (in->enable == TRUE) {
+		cmd.epoch1Line = in->lineindex;
+		vfe_prog_hw(ctrl->vfebase + CAMIF_EPOCH_IRQ, (uint32_t *)&cmd,
+					sizeof(cmd));
+	}
+
+	/* Set the epoch1 interrupt mask. */
+	ctrl->vfeImaskLocal.camifEpoch1Irq = in->enable;
+	ctrl->vfeImaskPacked = vfe_irq_pack(ctrl->vfeImaskLocal);
+	vfe_program_irq_mask(ctrl->vfeImaskPacked);
+
+	/* Store the epoch1 data. */
+	ctrl->vfeCamifEpoch1Local.enable = in->enable;
+	ctrl->vfeCamifEpoch1Local.lineindex = in->lineindex;
 }
 
 void vfe_camif_config(struct vfe_cmd_camif_config *in)

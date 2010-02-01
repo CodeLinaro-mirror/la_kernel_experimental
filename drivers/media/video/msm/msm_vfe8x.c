@@ -495,6 +495,13 @@ static int vfe_proc_general(struct msm_vfe_command_8k *cmd)
 	case VFE_CMD_ID_TEST_GEN_START:
 		break;
 
+	case VFE_CMD_ID_EPOCH1_CONFIG:{
+			struct vfe_cmds_camif_epoch epoch1;
+			CHECKED_COPY_FROM_USER(&epoch1);
+			vfe_epoch1_config(&epoch1);
+		}
+		break;
+
 /*
   acknowledge from upper layer
 	these are not in general command.
