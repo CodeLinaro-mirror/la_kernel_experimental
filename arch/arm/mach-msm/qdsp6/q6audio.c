@@ -915,7 +915,7 @@ static void audio_tx_analog_enable(int en)
 static int audio_update_acdb(uint32_t adev, uint32_t acdb_id)
 {
 	uint32_t sample_rate;
-	int sz;
+	int sz = -1;
 
 	sample_rate = q6_device_to_rate(adev);
 
@@ -924,10 +924,16 @@ static int audio_update_acdb(uint32_t adev, uint32_t acdb_id)
 	else
 		tx_acdb = acdb_id;
 
-	if (acdb_id == 0)
-		acdb_id = q6_device_to_cad_id(adev);
+	if (acdb_id != 0)
+		sz = acdb_get_config_table(acdb_id, sample_rate);
 
-	sz = acdb_get_config_table(acdb_id, sample_rate);
+	if (sz <= 0) {
+		acdb_id = q6_device_to_cad_id(adev);
+		sz = acdb_get_config_table(acdb_id, sample_rate);
+		if (sz <= 0)
+			return -EINVAL;
+	}
+
 	audio_set_table(ac_control, adev, sz);
 	return 0;
 }
