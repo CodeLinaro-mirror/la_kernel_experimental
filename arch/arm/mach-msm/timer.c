@@ -35,7 +35,14 @@ enum {
 static int msm_timer_debug_mask;
 module_param_named(debug_mask, msm_timer_debug_mask, int, S_IRUGO | S_IWUSR | S_IWGRP);
 
-#define MSM_DGT_BASE (MSM_GPT_BASE + 0x10)
+#if defined(CONFIG_ARCH_MSM7X30)
+#define MSM_GPT_BASE (MSM_TMR_BASE + 0x4)
+#define MSM_DGT_BASE (MSM_TMR_BASE + 0x24)
+#else
+#define MSM_GPT_BASE MSM_TMR_BASE
+#define MSM_DGT_BASE (MSM_TMR_BASE + 0x10)
+#endif
+
 
 #define TIMER_MATCH_VAL         0x0000
 #define TIMER_COUNT_VAL         0x0004
@@ -49,8 +56,11 @@ module_param_named(debug_mask, msm_timer_debug_mask, int, S_IRUGO | S_IWUSR | S_
 
 #define GPT_HZ 32768
 
-#ifdef CONFIG_ARCH_MSM_SCORPION
+#if defined(CONFIG_ARCH_QSD8X50)
 #define DGT_HZ (19200000 / 4) /* 19.2 MHz / 4 by default */
+#define MSM_DGT_SHIFT (0)
+#elif defined(CONFIG_ARCH_MSM7X30)
+#define DGT_HZ (24576000 / 4) /* 24.576 MHz (LPXO) / 4 by default */
 #define MSM_DGT_SHIFT (0)
 #else
 #define DGT_HZ 19200000 /* 19.2 MHz or 600 KHz after shift */

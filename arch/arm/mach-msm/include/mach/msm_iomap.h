@@ -61,9 +61,9 @@
 #define MSM_CSR_PHYS          _PHYS(0xC0100000,0xC0100000,0xAC100000)
 #define MSM_CSR_SIZE          SZ_4K
 
-#define MSM_GPT_PHYS          MSM_CSR_PHYS
-#define MSM_GPT_BASE          MSM_CSR_BASE
-#define MSM_GPT_SIZE          SZ_4K
+#define MSM_TMR_PHYS          MSM_CSR_PHYS
+#define MSM_TMR_BASE          MSM_CSR_BASE
+#define MSM_TMR_SIZE          SZ_4K
 
 #define MSM_DMOV_BASE         IOMEM(0xF8002000)
 #define MSM_DMOV_PHYS         _PHYS(0xA9700000,0xAC400000,0xA9700000)
