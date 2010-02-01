@@ -1761,7 +1761,11 @@ static long msm_ioctl_config(struct file *filep, unsigned int cmd,
 			rc = -EFAULT;
 			break;
 		}
+		pr_info("%s: copying all preview frames to config: %d\n",
+			__func__, enable);
 		pmsm->sync->report_preview_to_config = enable;
+		rc = 0;
+		break;
 	}
 
 	default:
