@@ -30,7 +30,7 @@ static int voice_started;
 static struct audio_client *voc_tx_clnt;
 static struct audio_client *voc_rx_clnt;
 
-static int q6_voice_start(void)
+static int q6_voice_start(uint32_t rx_acdb_id, uint32_t tx_acdb_id)
 {
 	int rc = 0;
 
@@ -42,17 +42,17 @@ static int q6_voice_start(void)
 		goto done;
 	}
 
-	voc_tx_clnt = q6voice_open(AUDIO_FLAG_WRITE);
-	if (!voc_tx_clnt) {
-		pr_err("voice: open voice tx failed.\n");
+	voc_rx_clnt = q6voice_open(AUDIO_FLAG_WRITE, rx_acdb_id);
+	if (!voc_rx_clnt) {
+		pr_err("voice: open voice rx failed.\n");
 		rc = -ENOMEM;
 		goto done;
 	}
 
-	voc_rx_clnt = q6voice_open(AUDIO_FLAG_READ);
-	if (!voc_rx_clnt) {
-		pr_err("voice: open voice rx failed.\n");
-		q6voice_close(voc_tx_clnt);
+	voc_tx_clnt = q6voice_open(AUDIO_FLAG_READ, tx_acdb_id);
+	if (!voc_tx_clnt) {
+		pr_err("voice: open voice tx failed.\n");
+		q6voice_close(voc_rx_clnt);
 		rc = -ENOMEM;
 	}
 
@@ -109,7 +109,14 @@ static int q6_ioctl(struct inode *inode, struct file *file,
 			rc = q6audio_update_acdb(id[0], id[1]);
 		break;
 	case AUDIO_START_VOICE:
-		rc = q6_voice_start();
+		if (arg == 0) {
+			id[0] = id[1] = 0;
+		} else if (copy_from_user(&id, (void*) arg, sizeof(id))) {
+			pr_info("voice: copy acdb_id from user failed\n");
+			rc = -EFAULT;
+			break;
+		}
+		rc = q6_voice_start(id[0], id[1]);
 		break;
 	case AUDIO_STOP_VOICE:
 		rc = q6_voice_stop();

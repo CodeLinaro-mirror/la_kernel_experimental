@@ -191,7 +191,7 @@ static inline int adie_set_path(struct dal_client *client,
 }
 
 static inline int adie_set_path_freq_plan(struct dal_client *client,
-					  uint32_t path_type, uint32_t plan) 
+                                         uint32_t path_type, uint32_t plan)
 {
 	return dal_call_f1(client, ADIE_OP_SET_PATH_FREQUENCY_PLAN,
 			   path_type, plan);
@@ -1483,7 +1483,7 @@ int q6audio_close(struct audio_client *ac)
 	return 0;
 }
 
-struct audio_client *q6voice_open(uint32_t flags)
+struct audio_client *q6voice_open(uint32_t flags, uint32_t acdb_id)
 {
 	struct audio_client *ac;
 
@@ -1496,10 +1496,10 @@ struct audio_client *q6voice_open(uint32_t flags)
 
 	ac->flags = flags;
 	if (ac->flags & AUDIO_FLAG_WRITE)
-		audio_rx_path_enable(1, 0);
+		audio_rx_path_enable(1, acdb_id);
 	else {
 		tx_clk_freq = 8000;
-		audio_tx_path_enable(1, 0);
+		audio_tx_path_enable(1, acdb_id);
 	}
 
 	return ac;
