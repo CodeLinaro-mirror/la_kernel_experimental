@@ -660,5 +660,8 @@ struct clk msm_clocks[] = {
 	CLK_8X50("mdp_vsync_clk", MDP_VSYNC_CLK, &msm_device_mdp.dev, 0),
 	CLK_8X50("spi_clk", SPI_CLK, &msm_device_spi.dev, 0),
 #endif
+#if defined(CONFIG_ARCH_MSM7X30)
+	CLK_ALL("usb_hs_core_clk", USB_HS_CORE_CLK, &msm_device_hsusb.dev, OFF),
+#endif
 	CLOCK(NULL, 0, NULL, 0, 0),
 };
