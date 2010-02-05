@@ -209,13 +209,13 @@ static void ds2784_parse_data(u8 *raw, struct battery_status *s)
 	s->current_avg_uA = ((n * 15625) / 10000) * 67;
 
 	/* Get Temperature:
-	 * Unit=0.125 degree C,therefore, give up LSB ,
-	 * just caculate MSB for temperature only.
+	 * 11 bit signed result in Unit=0.125 degree C.
+	 * Convert to integer tenths of degree C.
 	 */
-	n = (((signed char)raw[DS2784_REG_TEMP_MSB]) << 3) |
-		(raw[DS2784_REG_TEMP_LSB] >> 5);
+	n = ((raw[DS2784_REG_TEMP_MSB] << 8) |
+		(raw[DS2784_REG_TEMP_LSB])) >> 5;
 
-	s->temp_C = n + (n / 4);
+	s->temp_C = (n * 10) / 8;
 
 	/* RAAC is in units of 1.6mAh */
 	s->charge_uAh = ((raw[DS2784_REG_RAAC_MSB] << 8) |
@@ -409,7 +409,7 @@ static void ds2784_battery_update_status(struct ds2784_device_info *di)
 
 	ds2784_battery_read_status(di);
 
-	if (last_level != di->status.percentage)
+	if ((last_level != di->status.percentage) || (di->status.temp_C > 450))
 		power_supply_changed(&di->bat);
 }
 
