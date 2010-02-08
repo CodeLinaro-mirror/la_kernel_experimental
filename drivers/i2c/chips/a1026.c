@@ -327,6 +327,13 @@ unsigned char phonecall_bt[] = {
 	0x80,0x15,0x00,0x00, /* SetDigitalOutputGain, 0x00:Tx, 0x00:(0 dB) */
 };
 
+unsigned char phonecall_tty[] = {
+	0x80,0x26,0x00,0x15, /* SelectRouting, 0x0015:Snk,Pri,Snk,Snk - Csp,Zro,Zro (none) */
+	0x80,0x1C,0x00,0x00, /* VoiceProcessingOn, 0x0000:No */
+	0x80,0x1B,0x00,0x00, /* SetDigitalInputGain, 0x00:Primay Mic (Tx), 0x00:(0 dB) */
+	0x80,0x15,0x00,0xFB, /* SetDigitalOutputGain, 0x00:Tx, 0xFB:(-5 dB) */
+};
+
 unsigned char INT_MIC_recording_receiver[] = {
 	0x80,0x26,0x00,0x07, /* SelectRouting, 0x0007:Pri,Snk,Snk,Snk - Csp,Zro,Zro (none) */
 	0x80,0x1C,0x00,0x00, /* VoiceProcessingOn, 0x0000:No */
@@ -572,6 +579,11 @@ int a1026_set_config(char newid, int mode)
 		gpio_set_value(pdata->gpio_a1026_micsel, 0);
 		i2c_cmds = phonecall_bt;
 		size = sizeof(phonecall_bt);
+		break;
+	case A1026_PATH_INCALL_TTY:
+		gpio_set_value(pdata->gpio_a1026_micsel, 1);
+		i2c_cmds = phonecall_tty;
+		size = sizeof(phonecall_tty);
 		break;
 	case A1026_PATH_VR_NO_NS_RECEIVER:
 		gpio_set_value(pdata->gpio_a1026_micsel, 0);
