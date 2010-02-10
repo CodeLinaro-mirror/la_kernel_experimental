@@ -20,6 +20,7 @@
 #define ARCH_NR_GPIOS		224
 
 #include <asm-generic/gpio.h>
+#include <mach/gpio-names.h>
 
 #define gpio_get_value		__gpio_get_value
 #define gpio_set_value		__gpio_set_value
