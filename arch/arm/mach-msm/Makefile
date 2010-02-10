@@ -12,7 +12,7 @@ obj-y += irq.o
 endif
 
 obj-$(CONFIG_ARCH_QSD8X50) += sirc.o
-obj-$(CONFIG_MSM_SMD) += smd.o smd_tty.o
+obj-$(CONFIG_MSM_SMD) += smd.o smd_tty.o smd_qmi.o
 
 obj-$(CONFIG_MACH_TROUT) += board-trout.o devices-msm7x00.o
 obj-$(CONFIG_MACH_HALIBUT) += board-halibut.o devices-msm7x00.o
