@@ -115,6 +115,9 @@
 #define MSM_SDC4_PHYS         _PHYS(0xA0700000,0xA3100000,0xA0600000)
 #define MSM_SDC4_SIZE         SZ_4K
 
+#define MSM_NAND_PHYS         _PHYS(0xA0A00000,0xA0200000,0xA0A00000)
+#define MSM_NAND_SIZE         SZ_4K
+
 #define MSM_I2C_PHYS          0xA9900000
 #define MSM_I2C_SIZE          SZ_4K
 
