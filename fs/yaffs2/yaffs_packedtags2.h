@@ -30,7 +30,9 @@ typedef struct {
 
 typedef struct {
 	yaffs_PackedTags2TagsPart t;
+#ifdef CONFIG_YAFFS_DOES_ECC
 	yaffs_ECCOther ecc;
+#endif
 } yaffs_PackedTags2;
 
 /* Full packed tags with ECC, used for oob tags */
