@@ -800,7 +800,7 @@ again:
 	v4l_dbg(1, debug, client, "wrote 0x%x to offset 0x%x error %d", val,
 							reg, err);
 	if (retry <= MT9P012_I2C_RETRY_COUNT) {
-		v4l_warn(client, "retry ... %d", retry);
+		v4l_warn(client, "error %d ... retry ... %d", err, retry);
 		retry++;
 		mdelay(20);
 		goto again;
