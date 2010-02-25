@@ -40,7 +40,11 @@ static struct pm_policy policies[] = {
 	},
 };
 
+#ifdef CONFIG_OPPORTUNISTIC_SUSPEND
+static int policy = 1;
+#else
 static int policy;
+#endif
 
 static inline bool hibernation_supported(void)
 {
