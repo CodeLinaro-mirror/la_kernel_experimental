@@ -40,7 +40,11 @@ static struct policy policies[] = {
 	},
 #endif
 };
+#ifdef CONFIG_SUSPEND_BLOCKERS
+static int policy = 1;
+#else
 static int policy;
+#endif
 
 #ifdef CONFIG_PM_SLEEP
 
