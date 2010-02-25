@@ -19,6 +19,7 @@ config ARCH_MSM7X30
 	bool "MSM7x30 / QSD8x55"
 	select ARCH_MSM_SCORPION
 	select CPU_V7
+	select MSM_REMOTE_SPINLOCK_DEKKERS
 
 endchoice
 
