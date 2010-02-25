@@ -144,6 +144,12 @@ static ssize_t state_show(struct kobject *kobj, struct kobj_attribute *attr,
 	return (s - buf);
 }
 
+#ifdef CONFIG_SUSPEND_BLOCKERS
+static ssize_t request_state_store(struct kobject *kobj,
+				   struct kobj_attribute *attr,
+				   const char *buf, size_t n);
+#endif
+
 static ssize_t state_store(struct kobject *kobj, struct kobj_attribute *attr,
 			   const char *buf, size_t n)
 {
@@ -154,6 +160,10 @@ static ssize_t state_store(struct kobject *kobj, struct kobj_attribute *attr,
 	char *p;
 	int len;
 	int error = -EINVAL;
+
+#ifdef CONFIG_SUSPEND_BLOCKERS
+	return request_state_store(kobj, attr, buf, n);
+#endif
 
 	p = memchr(buf, '\n', n);
 	len = p ? p - buf : n;
