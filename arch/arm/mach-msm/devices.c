@@ -594,6 +594,21 @@ struct platform_device msm_device_spi = {
 };
 #endif
 
+static struct resource resources_ssbi_pmic[] = {
+	{
+		.start	= MSM_PMIC_SSBI_PHYS,
+		.end	= MSM_PMIC_SSBI_PHYS + MSM_PMIC_SSBI_SIZE - 1,
+		.flags	= IORESOURCE_MEM,
+	},
+};
+
+struct platform_device msm_device_ssbi_pmic = {
+	.name		= "msm_ssbi",
+	.id		= -1,
+	.resource	= resources_ssbi_pmic,
+	.num_resources	= ARRAY_SIZE(resources_ssbi_pmic),
+};
+
 #define CLOCK(clk_name, clk_id, clk_dev, clk_flags, clk_arch) {	\
 	.name = clk_name, \
 	.id = clk_id, \

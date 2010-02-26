@@ -41,4 +41,6 @@ extern struct platform_device msm_device_mdp;
 extern struct platform_device msm_device_touchscreen;
 extern struct platform_device msm_device_spi;
 
+extern struct platform_device msm_device_ssbi_pmic;
+
 #endif

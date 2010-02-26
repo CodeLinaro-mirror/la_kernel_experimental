@@ -153,6 +153,11 @@
 #define MSM_TSSC_PHYS         0xAA300000
 #define MSM_TSSC_SIZE         SZ_4K
 
+#if defined(CONFIG_ARCH_MSM7X30)
+#define MSM_PMIC_SSBI_PHYS    0xAD900000
+#define MSM_PMIC_SSBI_SIZE    SZ_4K
+#endif
+
 #if defined(CONFIG_ARCH_MSM_SCORPION)
 #define MSM_SIRC_BASE         IOMEM(0xF8006000)
 #define MSM_SIRC_PHYS         0xAC200000
