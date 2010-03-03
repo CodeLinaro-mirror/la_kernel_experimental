@@ -528,3 +528,112 @@ static int __init suspend_blocker_debugfs_init(void)
 }
 
 postcore_initcall(suspend_blocker_debugfs_init);
+
+static void suspend_blocking_work_complete(struct suspend_blocking_work *work)
+{
+	unsigned long flags;
+
+	WARN_ON(!work->active);
+	spin_lock_irqsave(&work->lock, flags);
+	if (!--work->active)
+		suspend_unblock(&work->suspend_blocker);
+	spin_unlock_irqrestore(&work->lock, flags);
+}
+
+static void suspend_blocking_work_func(struct work_struct *work)
+{
+	struct suspend_blocking_work *sbwork = to_suspend_blocking_work(work);
+
+	sbwork->func(work);
+	suspend_blocking_work_complete(sbwork);
+}
+
+/**
+ * suspend_blocking_work_init - Initialize a suspend-blocking work item.
+ * @work: Work item to initialize.
+ * @func: Callback.
+ * @name: Name for suspend blocker.
+ *
+ */
+void suspend_blocking_work_init(struct suspend_blocking_work *work,
+				work_func_t func, const char *name)
+{
+	INIT_WORK(&work->work, suspend_blocking_work_func);
+	suspend_blocker_init(&work->suspend_blocker, name);
+	work->func = func;
+	spin_lock_init(&work->lock);
+	work->active = 0;
+}
+EXPORT_SYMBOL_GPL(suspend_blocking_work_init);
+
+/**
+ * cancel_suspend_blocking_work_sync - Cancel a suspend-blocking work item.
+ * @work: Work item to handle.
+ */
+int cancel_suspend_blocking_work_sync(struct suspend_blocking_work *work)
+{
+	int ret;
+
+	ret = cancel_work_sync(&work->work);
+	if (ret)
+		suspend_blocking_work_complete(work);
+	return ret;
+}
+EXPORT_SYMBOL_GPL(cancel_suspend_blocking_work_sync);
+
+/**
+ * suspend_blocking_work_destroy - Destroy a suspend-blocking work item.
+ * @work: The work item in question.
+ *
+ * If the work was ever queued on more then one workqueue all but the last
+ * workqueue must be flushed before calling suspend_blocking_work_destroy.
+ */
+void suspend_blocking_work_destroy(struct suspend_blocking_work *work)
+{
+	cancel_suspend_blocking_work_sync(work);
+	WARN_ON(work->active);
+	suspend_blocker_unregister(&work->suspend_blocker);
+}
+EXPORT_SYMBOL_GPL(suspend_blocking_work_destroy);
+
+/**
+ * queue_suspend_blocking_work - Queue a suspend-blocking work item.
+ * @wq: Workqueue to queue the work on.
+ * @work: Work item to queue.
+ */
+int queue_suspend_blocking_work(struct workqueue_struct *wq,
+				struct suspend_blocking_work *work)
+{
+	int ret;
+	unsigned long flags;
+
+	spin_lock_irqsave(&work->lock, flags);
+	ret = queue_work(wq, &work->work);
+	if (ret) {
+		suspend_block(&work->suspend_blocker);
+		work->active++;
+	}
+	spin_unlock_irqrestore(&work->lock, flags);
+	return ret;
+}
+EXPORT_SYMBOL_GPL(queue_suspend_blocking_work);
+
+/**
+ * schedule_suspend_blocking_work - Schedule a suspend-blocking work item.
+ * @work: Work item to schedule.
+ */
+int schedule_suspend_blocking_work(struct suspend_blocking_work *work)
+{
+	int ret;
+	unsigned long flags;
+
+	spin_lock_irqsave(&work->lock, flags);
+	ret = schedule_work(&work->work);
+	if (ret) {
+		suspend_block(&work->suspend_blocker);
+		work->active++;
+	}
+	spin_unlock_irqrestore(&work->lock, flags);
+	return ret;
+}
+EXPORT_SYMBOL_GPL(schedule_suspend_blocking_work);
