@@ -18,6 +18,7 @@
 
 #include <linux/list.h>
 #include <linux/ktime.h>
+#include <linux/workqueue.h>
 
 /**
  * struct suspend_blocker_stats - statistics for a suspend blocker
@@ -62,6 +63,38 @@ struct suspend_blocker {
 #endif
 };
 
+/**
+ * struct suspend_blocking_work - the basic suspend_blocking_work structure
+ * @work:		Standard work struct.
+ * @suspend_blocker:	Suspend blocker.
+ * @func:		Callback.
+ * @lock:		Spinlock protecting pending and running state.
+ * @active:		Number of cpu workqueues where work is pending or
+ *			callback is running.
+ *
+ * When suspend blocking work is pending or its callback is running it prevents
+ * the system from entering opportunistic suspend.
+ *
+ * The suspend_blocking_work structure must be initialized by
+ * suspend_blocking_work_init().
+ */
+
+struct suspend_blocking_work {
+	struct work_struct work;
+#ifdef CONFIG_OPPORTUNISTIC_SUSPEND
+	struct suspend_blocker suspend_blocker;
+	work_func_t func;
+	spinlock_t lock;
+	int active;
+#endif
+};
+
+static inline struct suspend_blocking_work *to_suspend_blocking_work(
+	struct work_struct *work)
+{
+	return container_of(work, struct suspend_blocking_work, work);
+}
+
 #ifdef CONFIG_OPPORTUNISTIC_SUSPEND
 #define __SUSPEND_BLOCKER_INITIALIZER(blocker_name) \
 	{ .name = #blocker_name, }
@@ -77,6 +110,14 @@ extern void suspend_block(struct suspend_blocker *blocker);
 extern void suspend_unblock(struct suspend_blocker *blocker);
 extern bool suspend_blocker_is_active(struct suspend_blocker *blocker);
 extern bool suspend_is_blocked(void);
+
+void suspend_blocking_work_init(struct suspend_blocking_work *work,
+				work_func_t func, const char *name);
+void suspend_blocking_work_destroy(struct suspend_blocking_work *work);
+int queue_suspend_blocking_work(struct workqueue_struct *wq,
+				struct suspend_blocking_work *work);
+int schedule_suspend_blocking_work(struct suspend_blocking_work *work);
+int cancel_suspend_blocking_work_sync(struct suspend_blocking_work *work);
 
 #else
 
@@ -94,6 +135,32 @@ static inline bool suspend_blocker_is_active(struct suspend_blocker *bl)
 	return false;
 }
 static inline bool suspend_is_blocked(void) { return false; }
+
+static inline void suspend_blocking_work_init(
+	struct suspend_blocking_work *work, work_func_t func, const char *name)
+{
+	INIT_WORK(&work->work, func);
+}
+static inline void suspend_blocking_work_destroy(
+	struct suspend_blocking_work *work)
+{
+	cancel_work_sync(&work->work);
+}
+static inline int queue_suspend_blocking_work(
+	struct workqueue_struct *wq, struct suspend_blocking_work *work)
+{
+	return queue_work(wq, &work->work);
+}
+static inline int schedule_suspend_blocking_work(
+	struct suspend_blocking_work *work)
+{
+	return schedule_work(&work->work);
+}
+static inline int cancel_suspend_blocking_work_sync(
+	struct suspend_blocking_work *work)
+{
+	return cancel_work_sync(&work->work);
+}
 #endif
 
 #endif
