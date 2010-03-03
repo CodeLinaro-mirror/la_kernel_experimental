@@ -297,6 +297,9 @@ static int evdev_open(struct inode *inode, struct file *file)
 		goto err_free_client;
 
 	file->private_data = client;
+
+	/* hack: android user space not yet call the ioctl */
+	evdev_set_suspend_block(client, true);
 	return 0;
 
  err_free_client:
