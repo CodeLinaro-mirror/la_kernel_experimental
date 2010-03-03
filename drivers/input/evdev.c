@@ -68,6 +68,18 @@ static void evdev_pass_event(struct evdev_client *client,
 		kill_fasync(&client->fasync, SIGIO, POLL_IN);
 }
 
+static int evdev_set_suspend_block(struct evdev_client *client, bool enable)
+{
+	spin_lock_irq(&client->buffer_lock);
+	if (!client->use_suspend_blocker && enable)
+		suspend_blocker_init(&client->suspend_blocker, "evdev");
+	else if (client->use_suspend_blocker && !enable)
+		suspend_blocker_unregister(&client->suspend_blocker);
+	client->use_suspend_blocker = enable;
+	spin_unlock_irq(&client->buffer_lock);
+	return 0;
+}
+
 /*
  * Pass incoming event to all connected clients.
  */
@@ -598,14 +610,7 @@ static long evdev_do_ioctl(struct file *file, unsigned int cmd,
 		return put_user(client->use_suspend_blocker, ip);
 
 	case EVIOCSSUSPENDBLOCK:
-		spin_lock_irq(&client->buffer_lock);
-		if (!client->use_suspend_blocker && p)
-			suspend_blocker_init(&client->suspend_blocker, "evdev");
-		else if (client->use_suspend_blocker && !p)
-			suspend_blocker_unregister(&client->suspend_blocker);
-		client->use_suspend_blocker = !!p;
-		spin_unlock_irq(&client->buffer_lock);
-		return 0;
+		return evdev_set_suspend_block(client, !!p);
 
 	default:
 
