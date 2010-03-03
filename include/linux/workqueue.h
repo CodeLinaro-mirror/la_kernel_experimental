@@ -9,6 +9,7 @@
 #include <linux/linkage.h>
 #include <linux/bitops.h>
 #include <linux/lockdep.h>
+#include <linux/suspend_blocker.h>
 #include <asm/atomic.h>
 
 struct workqueue_struct;
@@ -26,7 +27,8 @@ struct work_struct {
 	atomic_long_t data;
 #define WORK_STRUCT_PENDING 0		/* T if work item pending execution */
 #define WORK_STRUCT_STATIC  1		/* static initializer (debugobjects) */
-#define WORK_STRUCT_FLAG_MASK (3UL)
+#define WORK_STRUCT_SUSPEND_BLOCKING  2	/* suspend blocking work */
+#define WORK_STRUCT_FLAG_MASK (7UL)
 #define WORK_STRUCT_WQ_DATA_MASK (~WORK_STRUCT_FLAG_MASK)
 	struct list_head entry;
 	work_func_t func;
@@ -46,6 +48,23 @@ struct delayed_work {
 static inline struct delayed_work *to_delayed_work(struct work_struct *work)
 {
 	return container_of(work, struct delayed_work, work);
+}
+
+struct suspend_blocking_work {
+	struct work_struct work;
+	struct suspend_blocker suspend_blocker;
+};
+
+static inline struct suspend_blocking_work *
+to_suspend_blocking_work(struct work_struct *work)
+{
+	return container_of(work, struct suspend_blocking_work, work);
+}
+
+static inline struct suspend_blocker *
+work_to_suspend_blocker(struct work_struct *work)
+{
+	return &to_suspend_blocking_work(work)->suspend_blocker;
 }
 
 struct execute_work {
@@ -156,6 +175,30 @@ static inline void destroy_work_on_stack(struct work_struct *work) { }
 		INIT_WORK(&(_work)->work, (_func));		\
 		init_timer_deferrable(&(_work)->timer);		\
 	} while (0)
+
+static inline void suspend_blocking_work_init(
+	struct suspend_blocking_work *work, work_func_t func, const char *name)
+{
+	INIT_WORK(&work->work, func);
+	suspend_blocker_init(&work->suspend_blocker, name);
+	set_bit(WORK_STRUCT_SUSPEND_BLOCKING, work_data_bits(&work->work));
+}
+
+/**
+ * suspend_blocking_work_destroy - Destroy suspend_blocking_work
+ * @work: The work item in question
+ *
+ * If the work was ever queued on more then one workqueue or on a multithreaded
+ * workqueue all these workqueues must be flushed before calling
+ * suspend_blocking_work_destroy. If only a single singlethreaded workqueue
+ * was used flush_work or cancel_work_sync can be used instead.
+ */
+
+static inline void
+suspend_blocking_work_destroy(struct suspend_blocking_work *work)
+{
+	suspend_blocker_destroy(&work->suspend_blocker);
+}
 
 /**
  * work_pending - Find out whether a work item is currently pending
