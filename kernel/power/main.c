@@ -12,6 +12,7 @@
 #include <linux/string.h>
 #include <linux/resume-trace.h>
 #include <linux/workqueue.h>
+#include <linux/suspend_blocker.h>
 
 #include "power.h"
 
@@ -143,6 +144,12 @@ static ssize_t state_show(struct kobject *kobj, struct kobj_attribute *attr,
 	return (s - buf);
 }
 
+#ifdef CONFIG_SUSPEND_BLOCKERS
+static ssize_t request_state_store(struct kobject *kobj,
+				   struct kobj_attribute *attr,
+				   const char *buf, size_t n);
+#endif
+
 static ssize_t state_store(struct kobject *kobj, struct kobj_attribute *attr,
 			   const char *buf, size_t n)
 {
@@ -153,6 +160,10 @@ static ssize_t state_store(struct kobject *kobj, struct kobj_attribute *attr,
 	char *p;
 	int len;
 	int error = -EINVAL;
+
+#ifdef CONFIG_SUSPEND_BLOCKERS
+	return request_state_store(kobj, attr, buf, n);
+#endif
 
 	p = memchr(buf, '\n', n);
 	len = p ? p - buf : n;
@@ -177,6 +188,64 @@ static ssize_t state_store(struct kobject *kobj, struct kobj_attribute *attr,
 }
 
 power_attr(state);
+
+/**
+ *	request_state - control system power state.
+ *
+ *	This is similar to state, but it does not block until the system
+ *	resumes, and it will try to re-enter the state until another state is
+ *	requested. Suspend blockers are respected and the requested state will
+ *	only be entered when no suspend blockers are active.
+ *	Write "on" to cancel.
+ *
+ *	If CONFIG_EARLYSUSPEND is set, early_suspend hooks are called when
+ *	the requested state changes to or from "on"
+ */
+
+#ifdef CONFIG_SUSPEND_BLOCKERS
+static ssize_t request_state_show(struct kobject *kobj,
+				  struct kobj_attribute *attr, char *buf)
+{
+	char *s = buf;
+	int i;
+
+	for (i = 0; i < PM_SUSPEND_MAX; i++) {
+		if (pm_states[i] && (i == PM_SUSPEND_ON || valid_state(i)))
+			s += sprintf(s, "%s ", pm_states[i]);
+	}
+	if (s != buf)
+		/* convert the last space to a newline */
+		*(s-1) = '\n';
+	return (s - buf);
+}
+
+static ssize_t request_state_store(struct kobject *kobj,
+				   struct kobj_attribute *attr,
+				   const char *buf, size_t n)
+{
+	suspend_state_t state = PM_SUSPEND_ON;
+	const char * const *s;
+	char *p;
+	int len;
+	int error = -EINVAL;
+
+	p = memchr(buf, '\n', n);
+	len = p ? p - buf : n;
+
+	for (s = &pm_states[state]; state < PM_SUSPEND_MAX; s++, state++) {
+		if (*s && len == strlen(*s) && !strncmp(buf, *s, len))
+			break;
+	}
+	if (state < PM_SUSPEND_MAX && *s)
+		if (state == PM_SUSPEND_ON || valid_state(state)) {
+			error = 0;
+			request_suspend_state(state);
+		}
+	return error ? error : n;
+}
+
+power_attr(request_state);
+#endif /* CONFIG_SUSPEND_BLOCKERS */
 
 #ifdef CONFIG_PM_TRACE
 int pm_trace_enabled;
@@ -203,13 +272,25 @@ pm_trace_store(struct kobject *kobj, struct kobj_attribute *attr,
 power_attr(pm_trace);
 #endif /* CONFIG_PM_TRACE */
 
+#ifdef CONFIG_USER_WAKELOCK
+power_attr(wake_lock);
+power_attr(wake_unlock);
+#endif
+
 static struct attribute * g[] = {
 	&state_attr.attr,
+#ifdef CONFIG_SUSPEND_BLOCKERS
+	&request_state_attr.attr,
+#endif
 #ifdef CONFIG_PM_TRACE
 	&pm_trace_attr.attr,
 #endif
 #if defined(CONFIG_PM_SLEEP) && defined(CONFIG_PM_DEBUG)
 	&pm_test_attr.attr,
+#endif
+#ifdef CONFIG_USER_WAKELOCK
+	&wake_lock_attr.attr,
+	&wake_unlock_attr.attr,
 #endif
 	NULL,
 };
