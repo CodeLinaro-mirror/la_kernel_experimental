@@ -17,3 +17,4 @@ obj-$(CONFIG_CPU_FREQ)                  += cpu-tegra.o
 
 obj-${CONFIG_MACH_HARMONY}              += board-harmony.o
 obj-${CONFIG_MACH_HARMONY}              += board-harmony-pinmux.o
+obj-${CONFIG_MACH_HARMONY}              += board-harmony-sdhci.o
