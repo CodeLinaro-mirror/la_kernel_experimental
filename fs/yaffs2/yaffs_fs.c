@@ -51,6 +51,7 @@ extern const char *yaffs_guts_c_version;
 #include <linux/interrupt.h>
 #include <linux/string.h>
 #include <linux/ctype.h>
+#include <linux/namei.h>
 
 #include "asm/div64.h"
 
@@ -262,6 +263,7 @@ static int yaffs_commit_write(struct file *f, struct page *pg, unsigned offset,
 static int yaffs_readlink(struct dentry *dentry, char __user *buffer,
 				int buflen);
 #if (LINUX_VERSION_CODE > KERNEL_VERSION(2, 6, 13))
+void yaffs_put_link(struct dentry *dentry, struct nameidata *nd, void *alias);
 static void *yaffs_follow_link(struct dentry *dentry, struct nameidata *nd);
 #else
 static int yaffs_follow_link(struct dentry *dentry, struct nameidata *nd);
@@ -327,6 +329,9 @@ static const struct inode_operations yaffs_file_inode_operations = {
 static const struct inode_operations yaffs_symlink_inode_operations = {
 	.readlink = yaffs_readlink,
 	.follow_link = yaffs_follow_link,
+#if (LINUX_VERSION_CODE > KERNEL_VERSION(2, 6, 13))
+	.put_link = yaffs_put_link,
+#endif
 	.setattr = yaffs_setattr,
 };
 
@@ -529,7 +534,6 @@ static int yaffs_follow_link(struct dentry *dentry, struct nameidata *nd)
 	yaffs_GrossLock(dev);
 
 	alias = yaffs_GetSymlinkAlias(yaffs_DentryToObject(dentry));
-
 	yaffs_GrossUnlock(dev);
 
 	if (!alias) {
@@ -537,8 +541,13 @@ static int yaffs_follow_link(struct dentry *dentry, struct nameidata *nd)
 		goto out;
 	}
 
+#if (LINUX_VERSION_CODE > KERNEL_VERSION(2, 6, 13))
+	nd_set_link(nd, alias);
+	ret = (int)alias;
+#else
 	ret = vfs_follow_link(nd, alias);
 	kfree(alias);
+#endif
 out:
 #if (LINUX_VERSION_CODE > KERNEL_VERSION(2, 6, 13))
 	return ERR_PTR(ret);
@@ -546,6 +555,12 @@ out:
 	return ret;
 #endif
 }
+
+#if (LINUX_VERSION_CODE > KERNEL_VERSION(2, 6, 13))
+void yaffs_put_link(struct dentry *dentry, struct nameidata *nd, void *alias) {
+	kfree(alias);
+}
+#endif
 
 struct inode *yaffs_get_inode(struct super_block *sb, int mode, int dev,
 				yaffs_Object *obj);
