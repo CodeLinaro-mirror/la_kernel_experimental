@@ -305,6 +305,14 @@ config EZX_PCAP
 	  This enables the PCAP ASIC present on EZX Phones. This is
 	  needed for MMC, TouchScreen, Sound, USB, etc..
 
+config PM8058
+	bool "Qualcomm PM8058 Power Management IC"
+	depends on MSM_SSBI && ARCH_MSM7X30
+	default y if MSM_SSBI && ARCH_MSM7X30
+	help
+	  Say yes here if your board is equipped with the Qualcomm
+	  PM8058 PMIC.
+
 endmenu
 
 menu "Multimedia Capabilities Port drivers"
