@@ -173,8 +173,8 @@
 #define MSM_GPU_REG_SIZE      0x00020000
 #endif
 
-#if defined(CONFIG_ARCH_QSD8X50)
-#define MSM_SPI_PHYS          0xA1200000
+#if defined(CONFIG_ARCH_QSD8X50) || defined(CONFIG_ARCH_MSM7X30)
+#define MSM_SPI_PHYS          _PHYS(0xA1200000,0xA8000000,0xA1200000)
 #define MSM_SPI_SIZE          SZ_4K
 #endif
 

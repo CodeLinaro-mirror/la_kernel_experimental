@@ -562,7 +562,7 @@ struct platform_device msm_device_touchscreen = {
 	.resource = resources_tssc,
 };
 
-#if defined(CONFIG_ARCH_QSD8X50)
+#if defined(CONFIG_ARCH_QSD8X50) || defined(CONFIG_ARCH_MSM7X30)
 static struct resource resources_spi[] = {
 	{
 		.start	= MSM_SPI_PHYS,
@@ -684,6 +684,7 @@ struct clk msm_clocks[] = {
 	CLK_ALL("usb_hs_core_clk", USB_HS_CORE_CLK, &msm_device_hsusb.dev, OFF),
 	CLK_ALL("mdp_pclk", MDP_PCLK, &msm_device_mdp.dev, OFF),
 	CLK_ALL("mddi_pclk", PMDH_PCLK, &msm_device_mddi0.dev, OFF | MINMAX),
+	CLK_ALL("spi_clk", SPI_CLK, &msm_device_spi.dev, 0),
 #endif
 	CLOCK(NULL, 0, NULL, 0, 0),
 };
