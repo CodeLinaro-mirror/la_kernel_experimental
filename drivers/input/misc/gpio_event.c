@@ -19,6 +19,7 @@
 #include <linux/gpio_event.h>
 #include <linux/hrtimer.h>
 #include <linux/platform_device.h>
+#include <linux/slab.h>
 
 struct gpio_event {
 	struct gpio_event_input_devs *input_devs;

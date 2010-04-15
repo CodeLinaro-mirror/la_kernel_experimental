@@ -18,6 +18,7 @@
 #include <linux/gpio_event.h>
 #include <linux/hrtimer.h>
 #include <linux/interrupt.h>
+#include <linux/slab.h>
 #include <linux/wakelock.h>
 
 struct gpio_kp {
