@@ -8,6 +8,7 @@ obj-y                                   += pinmux.o
 obj-y                                   += devices.o
 obj-y                                   += delay.o
 obj-y                                   += powergate.o
+obj-y					+= suspend.o
 obj-y					+= fuse.o
 obj-$(CONFIG_FIQ)                       += fiq.o fiq_glue.o
 
