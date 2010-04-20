@@ -594,6 +594,7 @@ struct platform_device msm_device_spi = {
 };
 #endif
 
+#ifdef CONFIG_MSM_SSBI
 static struct resource resources_ssbi_pmic[] = {
 	{
 		.start	= MSM_PMIC_SSBI_PHYS,
@@ -608,6 +609,7 @@ struct platform_device msm_device_ssbi_pmic = {
 	.resource	= resources_ssbi_pmic,
 	.num_resources	= ARRAY_SIZE(resources_ssbi_pmic),
 };
+#endif
 
 #define CLOCK(clk_name, clk_id, clk_dev, clk_flags, clk_arch) {	\
 	.name = clk_name, \
