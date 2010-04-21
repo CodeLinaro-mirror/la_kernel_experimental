@@ -16,6 +16,7 @@
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/sched.h>
+#include <linux/slab.h>
 #include <linux/interrupt.h>
 #include <linux/ptrace.h>
 #include <linux/timer.h>

@@ -19,6 +19,7 @@
 #include <linux/mtd/partitions.h>
 #include <linux/platform_device.h>
 #include <linux/sched.h>
+#include <linux/slab.h>
 #include <linux/dma-mapping.h>
 #include <linux/io.h>
 #include <linux/moduleparam.h>
