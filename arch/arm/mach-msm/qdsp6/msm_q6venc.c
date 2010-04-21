@@ -49,6 +49,7 @@
 #include <linux/msm_q6venc.h>
 
 #include <asm/cacheflush.h>
+#define dmac_inv_range(a,b) WARN(1, "need cache invalidate\n")
 
 #include "dal.h"
 
