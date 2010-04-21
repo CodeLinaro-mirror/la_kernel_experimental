@@ -42,6 +42,7 @@
 
 #include <linux/serial.h>
 #include <linux/serial_core.h>
+#include <linux/slab.h>
 #include <linux/init.h>
 #include <linux/interrupt.h>
 #include <linux/irq.h>

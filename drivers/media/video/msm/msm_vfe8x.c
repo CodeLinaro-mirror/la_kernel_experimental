@@ -18,6 +18,7 @@
 
 #include <linux/uaccess.h>
 #include <linux/interrupt.h>
+#include <linux/slab.h>
 #include <mach/irqs.h>
 #include <linux/clk.h>
 #include "msm_vfe8x_proc.h"
