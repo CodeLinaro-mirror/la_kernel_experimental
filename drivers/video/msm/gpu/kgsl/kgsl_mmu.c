@@ -17,6 +17,7 @@
  * along with this program; if not, you can find it at http://www.fsf.org
  */
 #include <linux/types.h>
+#include <linux/slab.h>
 #include <linux/spinlock.h>
 #include <linux/genalloc.h>
 

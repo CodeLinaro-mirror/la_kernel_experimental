@@ -21,6 +21,7 @@
 #include <linux/list.h>
 #include <linux/err.h>
 #include <linux/clk.h>
+#include <linux/slab.h>
 #include <linux/spinlock.h>
 #include <linux/fs.h>
 #include <linux/debugfs.h>
