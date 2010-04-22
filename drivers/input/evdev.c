@@ -59,7 +59,7 @@ static void evdev_pass_event(struct evdev_client *client,
 	 */
 	spin_lock(&client->buffer_lock);
 	if (client->use_suspend_blocker)
-		suspend_block(&client->suspend_blocker);
+		suspend_block_timeout(&client->suspend_blocker, 5 * HZ);
 	client->buffer[client->head++] = *event;
 	client->head &= EVDEV_BUFFER_SIZE - 1;
 	spin_unlock(&client->buffer_lock);
