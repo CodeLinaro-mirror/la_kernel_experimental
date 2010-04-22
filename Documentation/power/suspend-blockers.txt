@@ -1,0 +1,131 @@
+Suspend blockers
+================
+
+Suspend blockers provide a mechanism for device drivers and user-space processes
+to prevent the system from entering suspend. By default writing to
+/sys/power/state will ignore suspend blockers. Writing "opportunistic" to
+/sys/power/policy will change the behaviour of /sys/power/state to repeatedly
+enter the requested state when no suspend blockers are active. Writing "on" to
+/sys/power/state will cancel the automatic sleep request. Suspend blockers do
+not affect sleep states entered from idle.
+
+To use a suspend blocker, a device driver needs a struct suspend_blocker object
+that has to be initialized with suspend_blocker_init. When no longer needed,
+the suspend blocker must be destroyed with suspend_blocker_destroy.
+
+A suspend blocker is activated using suspend_block, which prevents the system
+from entering suspend until the suspend blocker is deactivated with
+suspend_unblock. Many suspend blockers may be used simultaneously, and the
+system is prevented from entering suspend as long as at least one of them is
+active.
+
+If the suspend operation has already started when calling suspend_block on a
+suspend_blocker, it will abort the suspend operation as long it has not already
+reached called suspend_ops->enter. This means that calling suspend_block from an
+interrupt handler or a freezeable thread always works, but some or all drivers
+may be temporarily suspended.
+
+In cell phones or other embedded systems where powering the screen is a
+significant drain on the battery, suspend blockers can be used to allow
+user-space to decide whether a keystroke received while the system is suspended
+should cause the screen to be turned back on or allow the system to go back into
+suspend. Use set_irq_wake or a platform specific api to make sure the keypad
+interrupt wakes up the cpu. Once the keypad driver has resumed, the sequence of
+events can look like this:
+
+- The Keypad driver gets an interrupt. It then calls suspend_block on the
+  keypad-scan suspend_blocker and starts scanning the keypad matrix.
+- The keypad-scan code detects a key change and reports it to the input-event
+  driver.
+- The input-event driver sees the key change, enqueues an event, and calls
+  suspend_block on the input-event-queue suspend_blocker.
+- The keypad-scan code detects that no keys are held and calls suspend_unblock
+  on the keypad-scan suspend_blocker.
+- The user-space input-event thread returns from select/poll, calls
+  suspend_block on the process-input-events suspend_blocker and then calls read
+  on the input-event device.
+- The input-event driver dequeues the key-event and, since the queue is now
+  empty, it calls suspend_unblock on the input-event-queue suspend_blocker.
+- The user-space input-event thread returns from read. If it determines that
+  the key should leave the screen off, it calls suspend_unblock on the
+  process_input_events suspend_blocker and then calls select or poll. The
+  system will automatically suspend again, since now no suspend blockers are
+  active.
+
+                 Key pressed   Key released
+                     |             |
+keypad-scan          ++++++++++++++++++
+input-event-queue        +++          +++
+process-input-events       +++          +++
+
+
+Driver API
+==========
+
+A driver can use the suspend block api by adding a suspend_blocker variable to
+its state and calling suspend_blocker_init. For instance:
+struct state {
+	struct suspend_blocker suspend_blocker;
+}
+
+init() {
+	suspend_blocker_init(&state->suspend_blocker, "suspend-blocker-name");
+}
+
+Before freeing the memory, suspend_blocker_destroy must be called:
+
+uninit() {
+	suspend_blocker_destroy(&state->suspend_blocker);
+}
+
+When the driver determines that it needs to run (usually in an interrupt
+handler) it calls suspend_block:
+	suspend_block(&state->suspend_blocker);
+
+When it no longer needs to run it calls suspend_unblock:
+	suspend_unblock(&state->suspend_blocker);
+
+Calling suspend_block when the suspend blocker is active or suspend_unblock when
+it is not active has no effect. This allows drivers to update their state and
+call suspend suspend_block or suspend_unblock based on the result.
+For instance:
+
+if (list_empty(&state->pending_work))
+	suspend_unblock(&state->suspend_blocker);
+else
+	suspend_block(&state->suspend_blocker);
+
+A driver can also call suspend_block_timeout to release the suspend_blocker
+after a delay:
+	suspend_block_timeout(&state->suspend_blocker, HZ);
+
+This works whether the suspend_blocker is already active or not. It is useful if
+the driver woke up other parts of the system that do not use suspend_blockers
+but still need to run. Avoid this when possible, since it will waste power
+if the timeout is long or may fail to finish needed work if the timeout is
+short. Calling suspend_block or suspend_unblock will cancel the timeout.
+
+User-space API
+==============
+
+To create a suspend_blocker from user-space, open the suspend_blocker device:
+    fd = open("/dev/suspend_blocker", O_RDWR | O_CLOEXEC);
+then call:
+    ioctl(fd, SUSPEND_BLOCKER_IOCTL_INIT(strlen(name)), name);
+
+To activate a suspend_blocker call:
+    ioctl(fd, SUSPEND_BLOCKER_IOCTL_BLOCK);
+or
+    ioctl(fd, SUSPEND_BLOCKER_IOCTL_BLOCK_TIMEOUT, &timespec_timeout);
+
+To unblock call:
+    ioctl(fd, SUSPEND_BLOCKER_IOCTL_UNBLOCK);
+
+To destroy the suspend_blocker, close the device:
+    close(fd);
+
+A module parameter, unclean_exit_grace_period, can be set to allow servers
+some time to restart if they crash with an active suspend_blocker. If the
+process dies or the device is closed while the suspend_blocker is active, a
+suspend_blocker will be held for the number of seconds specified.
+

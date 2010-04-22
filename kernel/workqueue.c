@@ -68,6 +68,14 @@ struct workqueue_struct {
 #endif
 };
 
+static inline int work_blocks_suspend(struct work_struct *work) {
+#ifdef CONFIG_SUSPEND_BLOCKERS
+	return test_bit(WORK_STRUCT_SUSPEND_BLOCKING, work_data_bits(work));
+#else
+	return false;
+#endif
+}
+
 #ifdef CONFIG_DEBUG_OBJECTS_WORK
 
 static struct debug_obj_descr work_debug_descr;
@@ -257,6 +265,10 @@ static void __queue_work(struct cpu_workqueue_struct *cwq,
 
 	debug_work_activate(work);
 	spin_lock_irqsave(&cwq->lock, flags);
+
+	if (work_blocks_suspend(work))
+		suspend_block(work_to_suspend_blocker(work));
+
 	insert_work(cwq, work, &cwq->worklist);
 	spin_unlock_irqrestore(&cwq->lock, flags);
 }
@@ -379,6 +391,7 @@ static void run_workqueue(struct cpu_workqueue_struct *cwq)
 		struct work_struct *work = list_entry(cwq->worklist.next,
 						struct work_struct, entry);
 		work_func_t f = work->func;
+		bool current_work_blocks_suspend = work_blocks_suspend(work);
 #ifdef CONFIG_LOCKDEP
 		/*
 		 * It is permissible to free the struct work_struct
@@ -416,6 +429,9 @@ static void run_workqueue(struct cpu_workqueue_struct *cwq)
 		}
 
 		spin_lock_irq(&cwq->lock);
+		if (current_work_blocks_suspend &&
+		    (get_wq_data(work) == cwq) && !work_pending(work))
+			suspend_unblock(work_to_suspend_blocker(work));
 		cwq->current_work = NULL;
 	}
 	spin_unlock_irq(&cwq->lock);
@@ -671,6 +687,8 @@ static int __cancel_work_timer(struct work_struct *work,
 		wait_on_work(work);
 	} while (unlikely(ret < 0));
 
+	if (work_blocks_suspend(work))
+		suspend_unblock(work_to_suspend_blocker(work));
 	work_clear_pending(work);
 	return ret;
 }
