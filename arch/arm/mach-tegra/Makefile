@@ -6,6 +6,7 @@ obj-y                                   += timer.o
 obj-y                                   += gpio.o
 obj-y                                   += pinmux.o
 obj-y                                   += devices.o
+obj-y                                   += delay.o
 obj-y					+= fuse.o
 obj-$(CONFIG_ARCH_TEGRA_2x_SOC)         += clock.o
 obj-$(CONFIG_ARCH_TEGRA_2x_SOC)         += tegra2_clocks.o
