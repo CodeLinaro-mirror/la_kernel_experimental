@@ -682,6 +682,8 @@ struct clk msm_clocks[] = {
 #endif
 #if defined(CONFIG_ARCH_MSM7X30)
 	CLK_ALL("usb_hs_core_clk", USB_HS_CORE_CLK, &msm_device_hsusb.dev, OFF),
+	CLK_ALL("mdp_pclk", MDP_PCLK, &msm_device_mdp.dev, OFF),
+	CLK_ALL("mddi_pclk", PMDH_PCLK, &msm_device_mddi0.dev, OFF | MINMAX),
 #endif
 	CLOCK(NULL, 0, NULL, 0, 0),
 };
