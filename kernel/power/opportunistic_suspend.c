@@ -1,0 +1,805 @@
+/*
+ * kernel/power/opportunistic_suspend.c
+ *
+ * Copyright (C) 2005-2010 Google, Inc.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ */
+
+#include <linux/module.h>
+#include <linux/rtc.h>
+#include <linux/suspend.h>
+#include <linux/debugfs.h>
+
+#include "power.h"
+
+extern struct workqueue_struct *pm_wq;
+
+enum {
+	DEBUG_EXIT_SUSPEND = 1U << 0,
+	DEBUG_WAKEUP = 1U << 1,
+	DEBUG_USER_STATE = 1U << 2,
+	DEBUG_SUSPEND = 1U << 3,
+	DEBUG_SUSPEND_BLOCKER = 1U << 4,
+	DEBUG_EXPIRE = 1U << 5,
+};
+static int debug_mask = DEBUG_EXIT_SUSPEND | DEBUG_WAKEUP | DEBUG_USER_STATE;
+module_param_named(debug_mask, debug_mask, int, S_IRUGO | S_IWUSR | S_IWGRP);
+
+#define SB_INITIALIZED            (1U << 8)
+#define SB_ACTIVE                 (1U << 9)
+#define SB_AUTO_EXPIRE            (1U << 10)
+#define SB_PREVENTING_SUSPEND     (1U << 11)
+
+DEFINE_SUSPEND_BLOCKER(main_suspend_blocker, main);
+
+static DEFINE_SPINLOCK(list_lock);
+static DEFINE_SPINLOCK(state_lock);
+static LIST_HEAD(inactive_blockers);
+static LIST_HEAD(active_blockers);
+static int current_event_num;
+static suspend_state_t requested_suspend_state = PM_SUSPEND_MEM;
+static bool enable_suspend_blockers;
+static DEFINE_SUSPEND_BLOCKER(unknown_wakeup, unknown_wakeups);
+
+#ifdef CONFIG_SUSPEND_BLOCKER_STATS
+static struct suspend_blocker_stats dropped_suspend_blockers;
+static ktime_t last_sleep_time_update;
+static bool wait_for_wakeup;
+
+static void suspend_blocker_stat_init(struct suspend_blocker_stats *stat)
+{
+	stat->count = 0;
+	stat->expire_count = 0;
+	stat->wakeup_count = 0;
+	stat->total_time = ktime_set(0, 0);
+	stat->prevent_suspend_time = ktime_set(0, 0);
+	stat->max_time = ktime_set(0, 0);
+	stat->last_time = ktime_set(0, 0);
+}
+
+static void init_dropped_suspend_blockers(void)
+{
+	suspend_blocker_stat_init(&dropped_suspend_blockers);
+}
+
+static void suspend_blocker_stat_drop(struct suspend_blocker_stats *stat)
+{
+	if (!stat->count)
+		return;
+
+	dropped_suspend_blockers.count += stat->count;
+	dropped_suspend_blockers.expire_count += stat->expire_count;
+	dropped_suspend_blockers.total_time = ktime_add(
+		dropped_suspend_blockers.total_time, stat->total_time);
+	dropped_suspend_blockers.prevent_suspend_time = ktime_add(
+		dropped_suspend_blockers.prevent_suspend_time,
+		stat->prevent_suspend_time);
+	dropped_suspend_blockers.max_time = ktime_add(
+		dropped_suspend_blockers.max_time, stat->max_time);
+}
+
+static bool stats_get_expired_time(struct suspend_blocker *blocker,
+				   ktime_t *expire_time)
+{
+	struct timespec ts;
+	struct timespec kt;
+	struct timespec tomono;
+	struct timespec delta;
+	unsigned long seq;
+	long timeout;
+
+	if (!(blocker->flags & SB_AUTO_EXPIRE))
+		return false;
+	do {
+		seq = read_seqbegin(&xtime_lock);
+		timeout = blocker->expires - jiffies;
+		if (timeout > 0)
+			return false;
+		kt = current_kernel_time();
+		tomono = wall_to_monotonic;
+	} while (read_seqretry(&xtime_lock, seq));
+	jiffies_to_timespec(-timeout, &delta);
+	set_normalized_timespec(&ts, kt.tv_sec + tomono.tv_sec - delta.tv_sec,
+				kt.tv_nsec + tomono.tv_nsec - delta.tv_nsec);
+	*expire_time = timespec_to_ktime(ts);
+	return true;
+}
+
+static void suspend_unblock_stat(struct suspend_blocker *blocker, bool expired)
+{
+	struct suspend_blocker_stats *stat = &blocker->stat;
+	ktime_t duration;
+	ktime_t now;
+
+	if (!(blocker->flags & SB_ACTIVE))
+		return;
+
+	if (stats_get_expired_time(blocker, &now))
+		expired = true;
+	else
+		now = ktime_get();
+	stat->count++;
+	if (expired)
+		stat->expire_count++;
+	duration = ktime_sub(now, stat->last_time);
+	stat->total_time = ktime_add(stat->total_time, duration);
+	if (ktime_to_ns(duration) > ktime_to_ns(stat->max_time))
+		stat->max_time = duration;
+
+	stat->last_time = ktime_get();
+	if (blocker->flags & SB_PREVENTING_SUSPEND) {
+		duration = ktime_sub(now, last_sleep_time_update);
+		stat->prevent_suspend_time = ktime_add(
+			stat->prevent_suspend_time, duration);
+		blocker->flags &= ~SB_PREVENTING_SUSPEND;
+	}
+}
+
+static void suspend_block_stat(struct suspend_blocker *blocker)
+{
+	if (wait_for_wakeup) {
+		if (debug_mask & DEBUG_WAKEUP)
+			pr_info("wakeup suspend blocker: %s\n", blocker->name);
+
+		wait_for_wakeup = false;
+		blocker->stat.wakeup_count++;
+	}
+	if ((blocker->flags & SB_AUTO_EXPIRE) &&
+	    time_is_before_eq_jiffies(blocker->expires)) {
+		suspend_unblock_stat(blocker, false);
+		blocker->stat.last_time = ktime_get();
+	}
+
+	if (!(blocker->flags & SB_ACTIVE))
+		blocker->stat.last_time = ktime_get();
+}
+
+static void update_sleep_wait_stats(bool done)
+{
+	struct suspend_blocker *blocker;
+	ktime_t now, etime, elapsed, add;
+	bool expired;
+
+	now = ktime_get();
+	elapsed = ktime_sub(now, last_sleep_time_update);
+	list_for_each_entry(blocker, &active_blockers, link) {
+		struct suspend_blocker_stats *stat = &blocker->stat;
+
+		expired = stats_get_expired_time(blocker, &etime);
+		if (blocker->flags & SB_PREVENTING_SUSPEND) {
+			if (expired)
+				add = ktime_sub(etime, last_sleep_time_update);
+			else
+				add = elapsed;
+			stat->prevent_suspend_time = ktime_add(
+				stat->prevent_suspend_time, add);
+		}
+		if (done || expired)
+			blocker->flags &= ~SB_PREVENTING_SUSPEND;
+		else
+			blocker->flags |= SB_PREVENTING_SUSPEND;
+	}
+	last_sleep_time_update = now;
+}
+
+void about_to_enter_suspend(void)
+{
+	wait_for_wakeup = true;
+}
+
+#else /* !CONFIG_SUSPEND_BLOCKER_STATS */
+
+static inline void init_dropped_suspend_blockers(void) {}
+static inline void suspend_blocker_stat_init(struct suspend_blocker_stats *s) {}
+static inline void suspend_blocker_stat_drop(struct suspend_blocker_stats *s) {}
+static inline void suspend_unblock_stat(struct suspend_blocker *blocker,
+					bool expired) {}
+static inline void suspend_block_stat(struct suspend_blocker *blocker) {}
+static inline void update_sleep_wait_stats(bool done) {}
+#endif /* !CONFIG_SUSPEND_BLOCKER_STATS */
+
+#define pr_info_time(fmt, args...) \
+	do { \
+		struct timespec ts; \
+		struct rtc_time tm; \
+		getnstimeofday(&ts); \
+		rtc_time_to_tm(ts.tv_sec, &tm); \
+		pr_info(fmt "(%d-%02d-%02d %02d:%02d:%02d.%09lu UTC)\n" , \
+			args, \
+			tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, \
+			tm.tm_hour, tm.tm_min, tm.tm_sec, ts.tv_nsec); \
+	} while (0);
+
+static void print_active_suspend_blockers(void)
+{
+	struct suspend_blocker *blocker;
+
+	list_for_each_entry(blocker, &active_blockers, link) {
+		if (blocker->flags & SB_AUTO_EXPIRE) {
+			long timeout = blocker->expires - jiffies;
+			if (timeout <= 0)
+				pr_info("PM: Suspend blocker %s, expired\n",
+					blocker->name);
+			else
+				pr_info("PM: Active suspend blocker %s, time "
+					"left %ld\n", blocker->name, timeout);
+		} else
+			pr_info("PM: Active suspend blocker %s\n",
+				blocker->name);
+	}
+}
+
+static void expire_suspend_blocker(struct suspend_blocker *blocker)
+{
+	suspend_unblock_stat(blocker, true);
+	blocker->flags &= ~(SB_ACTIVE | SB_AUTO_EXPIRE);
+	list_del(&blocker->link);
+	list_add(&blocker->link, &inactive_blockers);
+	if (debug_mask & (DEBUG_SUSPEND_BLOCKER | DEBUG_EXPIRE))
+		pr_info("expired suspend blocker %s\n", blocker->name);
+}
+
+static long max_suspend_blocker_timeout_locked(void)
+{
+	struct suspend_blocker *blocker, *n;
+	long max_timeout = 0;
+
+	list_for_each_entry_safe(blocker, n, &active_blockers, link) {
+		if (blocker->flags & SB_AUTO_EXPIRE) {
+			long timeout = blocker->expires - jiffies;
+			if (timeout <= 0)
+				expire_suspend_blocker(blocker);
+			else if (timeout > max_timeout)
+				max_timeout = timeout;
+		} else
+			return -1;
+	}
+	return max_timeout;
+}
+
+/**
+ * suspend_is_blocked - Check if there are active suspend blockers.
+ *
+ * Return true if suspend blockers are enabled and there are active suspend
+ * blockers, in which case the system cannot be put to sleep opportunistically.
+ */
+bool suspend_is_blocked(void)
+{
+	long ret;
+	unsigned long irqflags;
+	if (!enable_suspend_blockers)
+		return 0;
+	spin_lock_irqsave(&list_lock, irqflags);
+	ret = !!max_suspend_blocker_timeout_locked();
+	spin_unlock_irqrestore(&list_lock, irqflags);
+	return ret;
+}
+
+static void suspend_worker(struct work_struct *work)
+{
+	int ret;
+	int entry_event_num;
+
+	enable_suspend_blockers = true;
+
+	if (suspend_is_blocked()) {
+		if (debug_mask & DEBUG_SUSPEND)
+			pr_info("PM: Automatic suspend aborted\n");
+		goto abort;
+	}
+
+	entry_event_num = current_event_num;
+
+	if (debug_mask & DEBUG_SUSPEND)
+		pr_info("PM: Automatic suspend\n");
+
+	ret = pm_suspend(requested_suspend_state);
+
+	if (debug_mask & DEBUG_EXIT_SUSPEND)
+		pr_info_time("PM: Automatic suspend exit, ret = %d ", ret);
+
+	if (current_event_num == entry_event_num) {
+		if (debug_mask & DEBUG_SUSPEND)
+			pr_info("PM: pm_suspend() returned with no event\n");
+		suspend_block_timeout(&unknown_wakeup, HZ / 2);
+	}
+
+abort:
+	enable_suspend_blockers = false;
+}
+static DECLARE_WORK(suspend_work, suspend_worker);
+
+static void expire_suspend_blockers(unsigned long data)
+{
+	long timeout;
+	unsigned long irqflags;
+	if (debug_mask & DEBUG_EXPIRE)
+		pr_info("expire_suspend_blockers: start\n");
+	spin_lock_irqsave(&list_lock, irqflags);
+	if (debug_mask & DEBUG_SUSPEND)
+		print_active_suspend_blockers();
+	timeout = max_suspend_blocker_timeout_locked();
+	if (debug_mask & DEBUG_EXPIRE)
+		pr_info("expire_suspend_blockers: done, timeout %ld\n",
+			timeout);
+	if (timeout == 0)
+		queue_work(pm_wq, &suspend_work);
+	spin_unlock_irqrestore(&list_lock, irqflags);
+}
+static DEFINE_TIMER(expire_timer, expire_suspend_blockers, 0, 0);
+
+static void update_suspend(struct suspend_blocker *blocker, long max_timeout)
+{
+	if (max_timeout > 0) {
+		if (debug_mask & DEBUG_EXPIRE)
+			pr_info("suspend_blocker: %s, start expire timer, "
+				"%ld\n", blocker->name, max_timeout);
+		mod_timer(&expire_timer, jiffies + max_timeout);
+	} else {
+		if (del_timer(&expire_timer))
+			if (debug_mask & DEBUG_EXPIRE)
+				pr_info("suspend_blocker: %s, stop expire "
+					"timer\n", blocker->name);
+		if (max_timeout == 0)
+			queue_work(pm_wq, &suspend_work);
+	}
+}
+
+/**
+ * suspend_blocker_register - Prepare a suspend blocker for being used.
+ * @blocker: Suspend blocker to handle.
+ *
+ * The suspend blocker struct and name must not be freed before calling
+ * suspend_blocker_unregister().
+ */
+void suspend_blocker_register(struct suspend_blocker *blocker)
+{
+	unsigned long irqflags = 0;
+
+	WARN_ON(!blocker->name);
+
+	if (debug_mask & DEBUG_SUSPEND_BLOCKER)
+		pr_info("%s: Registering %s\n", __func__, blocker->name);
+
+	suspend_blocker_stat_init(&blocker->stat);
+
+	blocker->flags = SB_INITIALIZED;
+	INIT_LIST_HEAD(&blocker->link);
+
+	spin_lock_irqsave(&list_lock, irqflags);
+	list_add(&blocker->link, &inactive_blockers);
+	spin_unlock_irqrestore(&list_lock, irqflags);
+}
+EXPORT_SYMBOL(suspend_blocker_register);
+
+/**
+ * suspend_blocker_init - Initialize a suspend blocker's name and register it.
+ * @blocker: Suspend blocker to initialize.
+ * @name:    The name of the suspend blocker to show in debug messages and
+ *	     /sys/kernel/debug/suspend_blockers.
+ *
+ * The suspend blocker struct and name must not be freed before calling
+ * suspend_blocker_unregister().
+ */
+void suspend_blocker_init(struct suspend_blocker *blocker, const char *name)
+{
+	blocker->name = name;
+	suspend_blocker_register(blocker);
+}
+EXPORT_SYMBOL(suspend_blocker_init);
+
+/**
+ * suspend_blocker_unregister - Unregister a suspend blocker.
+ * @blocker: Suspend blocker to handle.
+ */
+void suspend_blocker_unregister(struct suspend_blocker *blocker)
+{
+	unsigned long irqflags;
+
+	if (WARN_ON(!(blocker->flags & SB_INITIALIZED)))
+		return;
+
+	spin_lock_irqsave(&list_lock, irqflags);
+
+	suspend_unblock_stat(blocker, false);
+	suspend_blocker_stat_drop(&blocker->stat);
+
+	blocker->flags &= ~SB_INITIALIZED;
+	list_del(&blocker->link);
+	if (blocker->flags & SB_ACTIVE)
+		update_suspend(blocker, max_suspend_blocker_timeout_locked());
+	spin_unlock_irqrestore(&list_lock, irqflags);
+
+	if (debug_mask & DEBUG_SUSPEND_BLOCKER)
+		pr_info("%s: Unregistered %s\n", __func__, blocker->name);
+}
+EXPORT_SYMBOL(suspend_blocker_unregister);
+
+static void __suspend_block(struct suspend_blocker *blocker, long timeout,
+			    bool has_timeout)
+{
+	unsigned long irqflags;
+
+	if (WARN_ON(!(blocker->flags & SB_INITIALIZED)))
+		return;
+
+	spin_lock_irqsave(&list_lock, irqflags);
+
+	suspend_block_stat(blocker);
+
+	blocker->flags |= SB_ACTIVE;
+	if (has_timeout) {
+		if (debug_mask & DEBUG_SUSPEND_BLOCKER)
+			pr_info("suspend_block: %s, timeout %ld.%03lu\n",
+				blocker->name, timeout / HZ,
+				(timeout % HZ) * MSEC_PER_SEC / HZ);
+
+		blocker->expires = jiffies + timeout;
+		blocker->flags |= SB_AUTO_EXPIRE;
+		list_move_tail(&blocker->link, &active_blockers);
+	} else {
+		if (debug_mask & DEBUG_SUSPEND_BLOCKER)
+			pr_info("suspend_block: %s\n", blocker->name);
+
+		blocker->expires = LONG_MAX;
+		blocker->flags &= ~SB_AUTO_EXPIRE;
+		/* Add to head so suspend_is_blocked only has to examine */
+		/* one entry */
+		list_move(&blocker->link, &active_blockers);
+	}
+
+	current_event_num++;
+
+	if (blocker == &main_suspend_blocker)
+		update_sleep_wait_stats(true);
+	else if (!suspend_blocker_is_active(&main_suspend_blocker))
+		update_sleep_wait_stats(false);
+	update_suspend(blocker, has_timeout ?
+		       max_suspend_blocker_timeout_locked() : -1);
+
+	spin_unlock_irqrestore(&list_lock, irqflags);
+}
+
+/**
+ * suspend_block - Block system suspend.
+ * @blocker: Suspend blocker to use.
+ *
+ * It is safe to call this function from interrupt context.
+ */
+void suspend_block(struct suspend_blocker *blocker)
+{
+	__suspend_block(blocker, 0, false);
+}
+EXPORT_SYMBOL(suspend_block);
+
+/**
+ * suspend_block_timeout - Block system suspend for a limited time
+ * @blocker: Suspend blocker to use.
+ * @timeout: Timeout in jiffies before the suspend blocker auto-unblock
+ */
+void suspend_block_timeout(struct suspend_blocker *blocker, long timeout)
+{
+	__suspend_block(blocker, timeout, true);
+}
+EXPORT_SYMBOL(suspend_block_timeout);
+
+/**
+ * suspend_unblock - Allow system suspend to happen.
+ * @blocker: Suspend blocker to unblock.
+ *
+ * If no other suspend blockers are active, schedule suspend of the system.
+ *
+ * It is safe to call this function from interrupt context.
+ */
+void suspend_unblock(struct suspend_blocker *blocker)
+{
+	unsigned long irqflags;
+
+	if (WARN_ON(!(blocker->flags & SB_INITIALIZED)))
+		return;
+
+	spin_lock_irqsave(&list_lock, irqflags);
+
+	if (debug_mask & DEBUG_SUSPEND_BLOCKER)
+		pr_info("%s: %s\n", __func__, blocker->name);
+
+	suspend_unblock_stat(blocker, false);
+
+	blocker->flags &= ~(SB_ACTIVE | SB_AUTO_EXPIRE);
+	list_move(&blocker->link, &inactive_blockers);
+	update_suspend(blocker, max_suspend_blocker_timeout_locked());
+
+	if (blocker == &main_suspend_blocker) {
+		if (debug_mask & DEBUG_SUSPEND)
+			print_active_suspend_blockers();
+
+		update_sleep_wait_stats(false);
+	}
+
+	spin_unlock_irqrestore(&list_lock, irqflags);
+}
+EXPORT_SYMBOL(suspend_unblock);
+
+/**
+ * suspend_blocker_is_active - Test if a suspend blocker is blocking suspend
+ * @blocker: Suspend blocker to check.
+ *
+ * Returns true if the suspend_blocker is currently active.
+ *
+ * If the suspend_blocker has a timeout, it does not check the timeout, but if
+ * the timeout had already expired when it was checked elsewhere this function
+ * will return false.
+ */
+bool suspend_blocker_is_active(struct suspend_blocker *blocker)
+{
+	WARN_ON(!(blocker->flags & SB_INITIALIZED));
+
+	return !!(blocker->flags & SB_ACTIVE);
+}
+EXPORT_SYMBOL(suspend_blocker_is_active);
+
+bool opportunistic_suspend_valid_state(suspend_state_t state)
+{
+	return (state == PM_SUSPEND_ON) || valid_state(state);
+}
+
+int opportunistic_suspend_state(suspend_state_t state)
+{
+	unsigned long irqflags;
+
+	if (!opportunistic_suspend_valid_state(state))
+		return -ENODEV;
+
+	spin_lock_irqsave(&state_lock, irqflags);
+
+	if (debug_mask & DEBUG_USER_STATE)
+		pr_info_time("%s: %s (%d->%d) at %lld ", __func__,
+			     state != PM_SUSPEND_ON ? "sleep" : "wakeup",
+			     requested_suspend_state, state,
+			     ktime_to_ns(ktime_get()));
+
+	requested_suspend_state = state;
+#ifdef CONFIG_EARLYSUSPEND
+	request_early_suspend_state(state == PM_SUSPEND_ON);
+#else
+	if (state == PM_SUSPEND_ON)
+		suspend_block(&main_suspend_blocker);
+	else
+		suspend_unblock(&main_suspend_blocker);
+#endif
+
+	spin_unlock_irqrestore(&state_lock, irqflags);
+
+	return 0;
+}
+
+void __init opportunistic_suspend_init(void)
+{
+	suspend_blocker_register(&main_suspend_blocker);
+	suspend_block(&main_suspend_blocker);
+	suspend_blocker_register(&unknown_wakeup);
+	init_dropped_suspend_blockers();
+}
+
+static struct dentry *suspend_blocker_stats_dentry;
+
+#ifdef CONFIG_SUSPEND_BLOCKER_STATS
+static int print_blocker_stats(struct seq_file *m, const char *name,
+				struct suspend_blocker_stats *stat,
+				struct suspend_blocker *blocker)
+{
+	int lock_count = stat->count;
+	int expire_count = stat->expire_count;
+	ktime_t active_time = ktime_set(0, 0);
+	ktime_t total_time = stat->total_time;
+	ktime_t max_time = stat->max_time;
+	ktime_t prevent_suspend_time = stat->prevent_suspend_time;
+
+	if (blocker && blocker->flags & SB_ACTIVE) {
+		ktime_t now, add_time;
+		bool expired = stats_get_expired_time(blocker, &now);
+		if (!expired)
+			now = ktime_get();
+		add_time = ktime_sub(now, stat->last_time);
+		lock_count++;
+		if (!expired)
+			active_time = add_time;
+		else
+			expire_count++;
+		total_time = ktime_add(total_time, add_time);
+		if (blocker->flags & SB_PREVENTING_SUSPEND)
+			prevent_suspend_time = ktime_add(prevent_suspend_time,
+					ktime_sub(now, last_sleep_time_update));
+		if (add_time.tv64 > max_time.tv64)
+			max_time = add_time;
+	}
+
+	return seq_printf(m, "\"%s\"\t%d\t%d\t%d\t%lld\t%lld\t%lld\t%lld\t"
+			"%lld\n", name, lock_count, expire_count,
+			stat->wakeup_count, ktime_to_ns(active_time),
+			ktime_to_ns(total_time),
+			ktime_to_ns(prevent_suspend_time),
+			ktime_to_ns(max_time),
+			ktime_to_ns(stat->last_time));
+}
+
+static int suspend_blocker_stats_show(struct seq_file *m, void *unused)
+{
+	unsigned long irqflags;
+	struct suspend_blocker *blocker;
+
+	seq_puts(m, "name\tcount\texpire_count\twake_count\tactive_since"
+		 "\ttotal_time\tsleep_time\tmax_time\tlast_change\n");
+
+	spin_lock_irqsave(&list_lock, irqflags);
+	list_for_each_entry(blocker, &active_blockers, link)
+		print_blocker_stats(m,
+				blocker->name, &blocker->stat, blocker);
+
+	list_for_each_entry(blocker, &inactive_blockers, link)
+		print_blocker_stats(m,
+				blocker->name, &blocker->stat, blocker);
+
+	print_blocker_stats(m, "deleted", &dropped_suspend_blockers, 0);
+	spin_unlock_irqrestore(&list_lock, irqflags);
+	return 0;
+}
+
+#else
+
+static int suspend_blocker_stats_show(struct seq_file *m, void *unused)
+{
+	unsigned long irqflags;
+	struct suspend_blocker *blocker;
+
+	seq_puts(m, "name\tactive\n");
+	spin_lock_irqsave(&list_lock, irqflags);
+	list_for_each_entry(blocker, &inactive_blockers, link)
+		seq_printf(m, "\"%s\"\t0\n", blocker->name);
+	list_for_each_entry(blocker, &active_blockers, link)
+		seq_printf(m, "\"%s\"\t1\n", blocker->name);
+	spin_unlock_irqrestore(&list_lock, irqflags);
+	return 0;
+}
+
+#endif
+
+static int suspend_blocker_stats_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, suspend_blocker_stats_show, NULL);
+}
+
+static const struct file_operations suspend_blocker_stats_fops = {
+	.owner = THIS_MODULE,
+	.open = suspend_blocker_stats_open,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
+};
+
+static int __init suspend_blocker_debugfs_init(void)
+{
+	suspend_blocker_stats_dentry = debugfs_create_file("suspend_blockers",
+			S_IRUGO, NULL, NULL, &suspend_blocker_stats_fops);
+	return 0;
+}
+
+postcore_initcall(suspend_blocker_debugfs_init);
+
+static void suspend_blocking_work_complete(struct suspend_blocking_work *work)
+{
+	unsigned long flags;
+
+	WARN_ON(!work->active);
+	spin_lock_irqsave(&work->lock, flags);
+	if (!--work->active)
+		suspend_unblock(&work->suspend_blocker);
+	spin_unlock_irqrestore(&work->lock, flags);
+}
+
+static void suspend_blocking_work_func(struct work_struct *work)
+{
+	struct suspend_blocking_work *sbwork = to_suspend_blocking_work(work);
+
+	sbwork->func(work);
+	suspend_blocking_work_complete(sbwork);
+}
+
+/**
+ * suspend_blocking_work_init - Initialize a suspend-blocking work item.
+ * @work: Work item to initialize.
+ * @func: Callback.
+ * @name: Name for suspend blocker.
+ *
+ */
+void suspend_blocking_work_init(struct suspend_blocking_work *work,
+				work_func_t func, const char *name)
+{
+	INIT_WORK(&work->work, suspend_blocking_work_func);
+	suspend_blocker_init(&work->suspend_blocker, name);
+	work->func = func;
+	spin_lock_init(&work->lock);
+	work->active = 0;
+}
+EXPORT_SYMBOL_GPL(suspend_blocking_work_init);
+
+/**
+ * cancel_suspend_blocking_work_sync - Cancel a suspend-blocking work item.
+ * @work: Work item to handle.
+ */
+int cancel_suspend_blocking_work_sync(struct suspend_blocking_work *work)
+{
+	int ret;
+
+	ret = cancel_work_sync(&work->work);
+	if (ret)
+		suspend_blocking_work_complete(work);
+	return ret;
+}
+EXPORT_SYMBOL_GPL(cancel_suspend_blocking_work_sync);
+
+/**
+ * suspend_blocking_work_destroy - Destroy a suspend-blocking work item.
+ * @work: The work item in question.
+ *
+ * If the work was ever queued on more then one workqueue all but the last
+ * workqueue must be flushed before calling suspend_blocking_work_destroy.
+ */
+void suspend_blocking_work_destroy(struct suspend_blocking_work *work)
+{
+	cancel_suspend_blocking_work_sync(work);
+	WARN_ON(work->active);
+	suspend_blocker_unregister(&work->suspend_blocker);
+}
+EXPORT_SYMBOL_GPL(suspend_blocking_work_destroy);
+
+/**
+ * queue_suspend_blocking_work - Queue a suspend-blocking work item.
+ * @wq: Workqueue to queue the work on.
+ * @work: Work item to queue.
+ */
+int queue_suspend_blocking_work(struct workqueue_struct *wq,
+				struct suspend_blocking_work *work)
+{
+	int ret;
+	unsigned long flags;
+
+	spin_lock_irqsave(&work->lock, flags);
+	ret = queue_work(wq, &work->work);
+	if (ret) {
+		suspend_block(&work->suspend_blocker);
+		work->active++;
+	}
+	spin_unlock_irqrestore(&work->lock, flags);
+	return ret;
+}
+EXPORT_SYMBOL_GPL(queue_suspend_blocking_work);
+
+/**
+ * schedule_suspend_blocking_work - Schedule a suspend-blocking work item.
+ * @work: Work item to schedule.
+ */
+int schedule_suspend_blocking_work(struct suspend_blocking_work *work)
+{
+	int ret;
+	unsigned long flags;
+
+	spin_lock_irqsave(&work->lock, flags);
+	ret = schedule_work(&work->work);
+	if (ret) {
+		suspend_block(&work->suspend_blocker);
+		work->active++;
+	}
+	spin_unlock_irqrestore(&work->lock, flags);
+	return ret;
+}
+EXPORT_SYMBOL_GPL(schedule_suspend_blocking_work);
