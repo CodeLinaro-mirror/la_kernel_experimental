@@ -34,6 +34,7 @@
 #include <linux/platform_device.h>
 #include <linux/poll.h>
 #include <linux/sched.h>
+#include <linux/slab.h>
 #include <linux/time.h>
 #include <linux/uaccess.h>
 #include <linux/wait.h>
