@@ -9,11 +9,7 @@ obj-y += clock.o clock-pcom.o
 obj-y += gpio.o generic_gpio.o
 obj-y += nand_partitions.o
 
-ifdef CONFIG_MSM_VIC
-obj-y += irq-vic.o
-else
 obj-y += irq.o
-endif
 
 obj-$(CONFIG_ARCH_QSD8X50) += sirc.o
 obj-$(CONFIG_MSM_FIQ_SUPPORT) += fiq_glue.o
