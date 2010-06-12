@@ -37,21 +37,6 @@
 #define SPSS_SIRC_INT_CLEAR           (MSM_SIRC_BASE + 0x28)
 #define SPSS_SIRC_SOFT_INT            (MSM_SIRC_BASE + 0x2C)
 
-struct sirc_regs_t {
-	void    *int_enable;
-	void    *int_enable_clear;
-	void    *int_enable_set;
-	void    *int_type;
-	void    *int_polarity;
-	void    *int_clear;
-};
-
-struct sirc_cascade_regs {
-	void    *int_status;
-	unsigned int    cascade_irq;
-	unsigned int    cascade_fiq;
-};
-
 static void sirc_irq_mask(unsigned int irq);
 static void sirc_irq_unmask(unsigned int irq);
 static void sirc_irq_ack(unsigned int irq);
