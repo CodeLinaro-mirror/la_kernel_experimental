@@ -202,7 +202,7 @@ int clk_set_rate(struct clk *clk, unsigned long rate)
 			goto err;
 	}
 	if (clk->flags & CLKFLAG_MIN) {
-		ret = clk->ops->set_min_rate(clk->id, rate)
+		ret = clk->ops->set_min_rate(clk->id, rate);
 		if (ret)
 			goto err;
 	}
