@@ -1279,7 +1279,7 @@ static void __init sapphire_map_io(void)
 {
 	msm_map_common_io();
 	iotable_init(sapphire_io_desc, ARRAY_SIZE(sapphire_io_desc));
-	msm_clock_init();
+	msm_clock_init(msm_clocks_7x01a, msm_num_clocks_7x01a);
 }
 
 MACHINE_START(SAPPHIRE, "sapphire")
