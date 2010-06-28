@@ -110,16 +110,6 @@ static struct usb_device_descriptor device_desc = {
 static struct list_head _functions = LIST_HEAD_INIT(_functions);
 static int _registered_function_count = 0;
 
-void android_usb_set_connected(int connected)
-{
-	if (_android_dev && _android_dev->cdev && _android_dev->cdev->gadget) {
-		if (connected)
-			usb_gadget_connect(_android_dev->cdev->gadget);
-		else
-			usb_gadget_disconnect(_android_dev->cdev->gadget);
-	}
-}
-
 static struct android_usb_function *get_function(const char *name)
 {
 	struct android_usb_function	*f;
@@ -208,7 +198,7 @@ static int product_matches_functions(struct android_usb_product *p)
 {
 	struct usb_function		*f;
 	list_for_each_entry(f, &android_config_driver.functions, list) {
-		if (product_has_function(p, f) == !!f->hidden)
+		if (product_has_function(p, f) == !!f->disabled)
 			return 0;
 	}
 	return 1;
@@ -323,8 +313,8 @@ void android_enable_function(struct usb_function *f, int enable)
 	int disable = !enable;
 	int product_id;
 
-	if (!!f->hidden != disable) {
-		f->hidden = disable;
+	if (!!f->disabled != disable) {
+		usb_function_set_enabled(f, !disable);
 
 #ifdef CONFIG_USB_ANDROID_RNDIS
 		if (!strcmp(f->name, "rndis")) {
@@ -347,7 +337,7 @@ void android_enable_function(struct usb_function *f, int enable)
 			 */
 			list_for_each_entry(func, &android_config_driver.functions, list) {
 				if (!strcmp(func->name, "usb_mass_storage")) {
-					func->hidden = enable;
+					usb_function_set_enabled(f, !enable);
 					break;
 				}
 			}
