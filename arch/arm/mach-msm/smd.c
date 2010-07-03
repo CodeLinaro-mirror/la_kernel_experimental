@@ -1061,7 +1061,7 @@ int smd_core_init(void)
 
 extern void msm_init_last_radio_log(struct module *);
 
-static int __init msm_smd_probe(struct platform_device *pdev)
+static int msm_smd_probe(struct platform_device *pdev)
 {
 	pr_info("smd_init()\n");
 
