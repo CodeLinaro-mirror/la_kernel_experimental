@@ -46,8 +46,8 @@
 #define ICTLR_COP_IER_CLR	0x38
 #define ICTLR_COP_IEP_CLASS	0x3c
 
-static void (*gic_mask_irq)(unsigned int irq) = NULL;
-static void (*gic_unmask_irq)(unsigned int irq) = NULL;
+static void (*gic_mask_irq)(unsigned int irq);
+static void (*gic_unmask_irq)(unsigned int irq);
 
 #define irq_to_ictlr(irq) (((irq)-32) >> 5)
 static void __iomem *tegra_ictlr_base = IO_ADDRESS(TEGRA_PRIMARY_ICTLR_BASE);
