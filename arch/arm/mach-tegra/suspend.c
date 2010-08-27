@@ -347,13 +347,13 @@ static void tegra_suspend_dram(bool do_lp0)
 
 	suspend_cpu_complex();
 	flush_cache_all();
-	outer_shutdown();
+//	outer_shutdown();
 
 	__cortex_a9_save(mode);
 	restore_cpu_complex();
 
 	writel(orig, evp_reset);
-	outer_restart();
+//	outer_restart();
 	writel(on_timer, pmc + PMC_CPUPWRGOOD_TIMER);
 	writel(off_timer, pmc + PMC_CPUPWROFF_TIMER);
 
