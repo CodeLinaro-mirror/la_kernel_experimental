@@ -92,7 +92,7 @@ static uint32_t YCALCBLOCKS(uint64_t partition_size, uint32_t block_size)
 #include "yaffs_mtdif1.h"
 #include "yaffs_mtdif2.h"
 
-unsigned int yaffs_trace_mask = YAFFS_TRACE_BAD_BLOCKS | YAFFS_TRACE_ALWAYS;
+unsigned int yaffs_trace_mask = YAFFS_TRACE_BAD_BLOCKS;
 unsigned int yaffs_wr_attempts = YAFFS_WR_ATTEMPTS;
 unsigned int yaffs_auto_checkpoint = 1;
 unsigned int yaffs_gc_control = 1;
