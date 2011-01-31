@@ -237,6 +237,7 @@ struct snd_soc_jack;
 struct snd_soc_jack_zone;
 struct snd_soc_jack_pin;
 struct snd_soc_cache_ops;
+struct snd_soc_dsp_link;
 #include <sound/soc-dapm.h>
 
 #ifdef CONFIG_GPIOLIB
@@ -292,6 +293,10 @@ int snd_soc_default_volatile_register(struct snd_soc_codec *codec,
 				      unsigned int reg);
 int snd_soc_default_readable_register(struct snd_soc_codec *codec,
 				      unsigned int reg);
+struct snd_pcm_substream *snd_soc_get_dai_substream(struct snd_soc_card *card,
+		const char *dai_link, int stream);
+struct snd_soc_pcm_runtime *snd_soc_get_pcm_runtime(struct snd_soc_card *card,
+		const char *dai_link);
 
 /* Utility functions to get clock rates from various things */
 int snd_soc_calc_frame_size(int sample_size, int channels, int tdm_slots);
@@ -647,6 +652,15 @@ struct snd_soc_platform {
 	struct snd_soc_card *card;
 	struct list_head list;
 	struct list_head card_list;
+	int num_dai;
+
+	/* dapm */
+	struct snd_soc_dapm_context dapm;
+
+#ifdef CONFIG_DEBUG_FS
+	struct dentry *debugfs_platform_root;
+	struct dentry *debugfs_dapm;
+#endif
 };
 
 struct snd_soc_dai_link {
@@ -658,14 +672,27 @@ struct snd_soc_dai_link {
 	const char *cpu_dai_name;
 	const char *codec_dai_name;
 
+	struct snd_soc_dsp_link *dsp_link;
 	/* Keep DAI active over suspend */
 	unsigned int ignore_suspend:1;
 
 	/* Symmetry requirements */
 	unsigned int symmetric_rates:1;
+	/* No PCM created for this DAI link */
+	unsigned int no_pcm:1;
+	/* This DAI link can change CODEC and platform at runtime*/
+	unsigned int dynamic:1;
+	/* This DAI link has no codec side driver*/
+	unsigned int no_codec:1;
+	/* This DAI has a Backend ID */
+	unsigned int be_id;
 
 	/* codec/machine specific init - e.g. add machine controls */
 	int (*init)(struct snd_soc_pcm_runtime *rtd);
+
+	/* hw_params re-writing for BE and FE sync */
+	int (*be_hw_params_fixup)(struct snd_soc_pcm_runtime *rtd,
+			struct snd_pcm_hw_params *params);
 
 	/* machine stream operations */
 	struct snd_soc_ops *ops;
@@ -784,9 +811,17 @@ struct snd_soc_pcm_runtime  {
 	struct snd_soc_card *card;
 	struct snd_soc_dai_link *dai_link;
 	struct mutex pcm_mutex;
+	struct snd_pcm_ops ops;
 
 	unsigned int complete:1;
 	unsigned int dev_registered:1;
+	/* DSP runtime data */
+	struct list_head be_clients[2];
+	struct list_head fe_clients[2];
+	struct mutex fe_mutex;
+	int users[2];
+	struct snd_pcm_runtime *runtime[2];
+	struct snd_pcm_hw_params params[2];
 
 	/* Symmetry data - only valid if symmetry is being enforced */
 	unsigned int rate;
