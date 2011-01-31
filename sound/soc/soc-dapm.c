@@ -128,6 +128,8 @@ static int soc_widget_read(struct snd_soc_dapm_widget *w, int reg)
 {
 	if (w->codec)
 		return snd_soc_read(w->codec, reg);
+	else if  (w->platform)
+		return snd_soc_platform_read(w->platform, reg);
 	return 0;
 }
 
@@ -135,6 +137,8 @@ static int soc_widget_write(struct snd_soc_dapm_widget *w,int reg, int val)
 {
 	if (w->codec)
 		return snd_soc_write(w->codec, reg, val);
+	else if  (w->platform)
+		return snd_soc_platform_write(w->platform, reg, val);
 	return 0;
 }
 
