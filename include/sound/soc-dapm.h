@@ -513,6 +513,12 @@ struct snd_soc_dapm_context {
 	int dev_power;
 	struct list_head list;
 
+	struct list_head widgets;
+	struct list_head paths;
+	int num_valid_paths;
+
+	int (*stream_event)(struct snd_soc_dapm_context *dapm);
+
 #ifdef CONFIG_DEBUG_FS
 	struct dentry *debugfs_dapm;
 #endif
