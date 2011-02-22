@@ -592,10 +592,23 @@ static struct omap_board_mux board_mux[] __initdata = {
 
 extern void __init omap4_panda_android_init(void);
 
+void sr32(u32 addr, u32 start_bit, u32 num_bits, u32 value)
+{
+        u32 tmp, msk = 0;
+        msk = 1 << num_bits;
+        --msk;
+        tmp = omap_readl(addr) & ~(msk << start_bit);
+        tmp |=  value << start_bit;
+        omap_writel(tmp, addr);
+}
+
 static void __init omap4_panda_init(void)
 {
 	int package = OMAP_PACKAGE_CBS;
 	int err;
+
+	sr32(0x4a009100, 0, 2, 0x2);
+	sr32(0x4a009120, 0, 12, 0x702);
 
 	if (omap_rev() == OMAP4430_REV_ES1_0)
 		package = OMAP_PACKAGE_CBL;

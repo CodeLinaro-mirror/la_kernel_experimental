@@ -48,7 +48,7 @@ static int def_rotate;
 static int def_mirror;
 
 #ifdef DEBUG
-unsigned int omapfb_debug;
+unsigned int omapfb_debug = 1;
 module_param_named(debug, omapfb_debug, bool, 0644);
 static unsigned int omapfb_test_pattern;
 module_param_named(test, omapfb_test_pattern, bool, 0644);
@@ -1012,8 +1012,10 @@ int omapfb_apply_changes(struct fb_info *fbi, int init)
 		if (r)
 			goto err;
 
-		if (!init && ovl->manager)
+		if (!init && ovl->manager) {
 			ovl->manager->apply(ovl->manager);
+			ovl->manager->wait_for_vsync(ovl->manager);
+		}
 	}
 	return 0;
 err:
@@ -1822,7 +1824,7 @@ static int omapfb_fb_init(struct omapfb2_device *fbdev, struct fb_info *fbi)
 		}
 
 		var->xres_virtual = var->xres;
-		var->yres_virtual = var->yres;
+		var->yres_virtual = var->yres * 2;
 
 		if (!var->bits_per_pixel) {
 			switch (omapfb_get_recommended_bpp(fbdev, display)) {
