@@ -46,6 +46,8 @@
 #include <mach/hardware.h>
 #include <plat/nand.h>
 #include <plat/usb.h>
+#include <plat/display.h>
+#include <plat/panel-generic-dpi.h>
 
 #include "mux.h"
 #include "sdram-micron-mt46h32m32lf-6.h"
@@ -358,6 +360,25 @@ static struct regulator_init_data overo_vmmc1 = {
 	.consumer_supplies	= &overo_vmmc1_supply,
 };
 
+static struct regulator_consumer_supply overo_vpll2_supplies[] = {
+	REGULATOR_SUPPLY("vdds_dsi", "omapdss"),
+	REGULATOR_SUPPLY("vdds_dsi", "omapdss_dsi1"),
+};
+
+static struct regulator_init_data overo_vpll2 = {
+	.constraints = {
+		.min_uV			= 1800000,
+		.max_uV			= 1800000,
+		.apply_uV		= true,
+		.valid_modes_mask	= REGULATOR_MODE_NORMAL
+					| REGULATOR_MODE_STANDBY,
+		.valid_ops_mask		= REGULATOR_CHANGE_MODE
+					| REGULATOR_CHANGE_STATUS,
+	},
+	.num_consumer_supplies	= ARRAY_SIZE(overo_vpll2_supplies),
+	.consumer_supplies	= overo_vpll2_supplies,
+};
+
 static struct twl4030_codec_audio_data overo_audio_data = {
 	.audio_mclk = 26000000,
 };
@@ -376,6 +397,7 @@ static struct twl4030_platform_data overo_twldata = {
 	.usb		= &overo_usb_data,
 	.codec		= &overo_codec_data,
 	.vmmc1		= &overo_vmmc1,
+	.vpll2		= &overo_vpll2,
 };
 
 static struct i2c_board_info __initdata overo_i2c_boardinfo[] = {
@@ -396,31 +418,56 @@ static int __init overo_i2c_init(void)
 	return 0;
 }
 
-static struct platform_device overo_lcd_device = {
-	.name		= "overo_lcd",
-	.id		= -1,
+#define OVERO_GPIO_LCD_EN 144
+
+static int omap3_overo_enable_lcd(struct omap_dss_device *dssdev)
+{
+	gpio_set_value(OVERO_GPIO_LCD_EN, 1);
+	return 0;
+}
+
+static void omap3_overo_disable_lcd(struct omap_dss_device *dssdev)
+{
+	gpio_set_value(OVERO_GPIO_LCD_EN, 0);
+}
+
+static struct panel_generic_dpi_data lcd_panel = {
+	.name			= "samsung_lte430wq_f0c",
+	.platform_enable	= omap3_overo_enable_lcd,
+	.platform_disable	= omap3_overo_disable_lcd,
 };
 
-static struct omap_lcd_config overo_lcd_config __initdata = {
-	.ctrl_name	= "internal",
+static struct omap_dss_device omap3_overo_lcd_device = {
+	.name			= "lcd",
+	.type			= OMAP_DISPLAY_TYPE_DPI,
+	.driver_name		= "generic_dpi_panel",
+	.data			= &lcd_panel,
+	.phy.dpi.data_lines	= 24,
+};
+
+static struct omap_dss_device *omap3_overo_dss_devices[] = {
+	&omap3_overo_lcd_device,
+};
+
+static struct omap_dss_board_info omap3_overo_dss_data = {
+	.num_devices	= ARRAY_SIZE(omap3_overo_dss_devices),
+	.devices	= omap3_overo_dss_devices,
+	.default_device	= &omap3_overo_lcd_device,
 };
 
 static struct omap_board_config_kernel overo_config[] __initdata = {
-	{ OMAP_TAG_LCD,		&overo_lcd_config },
 };
 
-static void __init overo_init_irq(void)
+static void __init overo_init_early(void)
 {
 	omap_board_config = overo_config;
 	omap_board_config_size = ARRAY_SIZE(overo_config);
 	omap2_init_common_infrastructure();
 	omap2_init_common_devices(mt46h32m32lf6_sdrc_params,
 				  mt46h32m32lf6_sdrc_params);
-	omap_init_irq();
 }
 
 static struct platform_device *overo_devices[] __initdata = {
-	&overo_lcd_device,
 };
 
 static const struct ehci_hcd_omap_platform_data ehci_pdata __initconst = {
@@ -457,6 +504,7 @@ static void __init overo_init(void)
 	usb_ehci_init(&ehci_pdata);
 	overo_ads7846_init();
 	overo_init_smsc911x();
+	omap_display_init(&omap3_overo_dss_data);
 
 	/* Ensure SDRC pins are mux'd for self-refresh */
 	omap_mux_init_signal("sdrc_cke0", OMAP_PIN_OUTPUT);
@@ -501,9 +549,10 @@ static void __init overo_init(void)
 
 MACHINE_START(OVERO, "Gumstix Overo")
 	.boot_params	= 0x80000100,
-	.map_io		= omap3_map_io,
 	.reserve	= omap_reserve,
-	.init_irq	= overo_init_irq,
+	.map_io		= omap3_map_io,
+	.init_early	= overo_init_early,
+	.init_irq	= omap_init_irq,
 	.init_machine	= overo_init,
 	.timer		= &omap_timer,
 MACHINE_END

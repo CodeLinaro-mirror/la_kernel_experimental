@@ -38,11 +38,10 @@
 #include <plat/clock.h>
 
 #include "dss.h"
+#include "dss_features.h"
 
 /*#define VERBOSE_IRQ*/
 #define DSI_CATCH_MISSING_TE
-
-#define DSI_BASE		0x4804FC00
 
 struct dsi_reg { u16 idx; };
 
@@ -190,8 +189,8 @@ struct dsi_reg { u16 idx; };
 #define FINT_MIN 750000
 #define REGN_MAX (1 << 7)
 #define REGM_MAX ((1 << 11) - 1)
-#define REGM3_MAX (1 << 4)
-#define REGM4_MAX (1 << 4)
+#define REGM_DISPC_MAX (1 << 4)
+#define REGM_DSI_MAX (1 << 4)
 #define LP_DIV_MAX ((1 << 13) - 1)
 
 enum fifo_size {
@@ -222,7 +221,9 @@ struct dsi_irq_stats {
 
 static struct
 {
+	struct platform_device *pdev;
 	void __iomem	*base;
+	int irq;
 
 	struct dsi_clock_info current_cinfo;
 
@@ -232,6 +233,7 @@ static struct
 		enum dsi_vc_mode mode;
 		struct omap_dss_device *dssdev;
 		enum fifo_size fifo_size;
+		int vc_id;
 	} vc[4];
 
 	struct mutex lock;
@@ -481,12 +483,16 @@ static void print_irq_status_cio(u32 status)
 static int debug_irq;
 
 /* called from dss */
-void dsi_irq_handler(void)
+static irqreturn_t omap_dsi_irq_handler(int irq, void *arg)
 {
 	u32 irqstatus, vcstatus, ciostatus;
 	int i;
 
 	irqstatus = dsi_read_reg(DSI_IRQSTATUS);
+
+	/* IRQ is not for us */
+	if (!irqstatus)
+		return IRQ_NONE;
 
 #ifdef CONFIG_OMAP2_DSS_COLLECT_IRQ_STATS
 	spin_lock(&dsi.irq_stats_lock);
@@ -565,8 +571,8 @@ void dsi_irq_handler(void)
 #ifdef CONFIG_OMAP2_DSS_COLLECT_IRQ_STATS
 	spin_unlock(&dsi.irq_stats_lock);
 #endif
+	return IRQ_HANDLED;
 }
-
 
 static void _dsi_initialize_irq(void)
 {
@@ -637,22 +643,22 @@ static void dsi_vc_disable_bta_irq(int channel)
 	dsi_write_reg(DSI_VC_IRQENABLE(channel), l);
 }
 
-/* DSI func clock. this could also be DSI2_PLL_FCLK */
+/* DSI func clock. this could also be dsi_pll_hsdiv_dsi_clk */
 static inline void enable_clocks(bool enable)
 {
 	if (enable)
-		dss_clk_enable(DSS_CLK_ICK | DSS_CLK_FCK1);
+		dss_clk_enable(DSS_CLK_ICK | DSS_CLK_FCK);
 	else
-		dss_clk_disable(DSS_CLK_ICK | DSS_CLK_FCK1);
+		dss_clk_disable(DSS_CLK_ICK | DSS_CLK_FCK);
 }
 
 /* source clock for DSI PLL. this could also be PCLKFREE */
 static inline void dsi_enable_pll_clock(bool enable)
 {
 	if (enable)
-		dss_clk_enable(DSS_CLK_FCK2);
+		dss_clk_enable(DSS_CLK_SYSCK);
 	else
-		dss_clk_disable(DSS_CLK_FCK2);
+		dss_clk_disable(DSS_CLK_SYSCK);
 
 	if (enable && dsi.pll_locked) {
 		if (wait_for_bit_change(DSI_PLL_STATUS, 1, 1) != 1)
@@ -707,14 +713,14 @@ static inline int dsi_if_enable(bool enable)
 	return 0;
 }
 
-unsigned long dsi_get_dsi1_pll_rate(void)
+unsigned long dsi_get_pll_hsdiv_dispc_rate(void)
 {
-	return dsi.current_cinfo.dsi1_pll_fclk;
+	return dsi.current_cinfo.dsi_pll_hsdiv_dispc_clk;
 }
 
-static unsigned long dsi_get_dsi2_pll_rate(void)
+static unsigned long dsi_get_pll_hsdiv_dsi_rate(void)
 {
-	return dsi.current_cinfo.dsi2_pll_fclk;
+	return dsi.current_cinfo.dsi_pll_hsdiv_dsi_clk;
 }
 
 static unsigned long dsi_get_txbyteclkhs(void)
@@ -726,12 +732,12 @@ static unsigned long dsi_fclk_rate(void)
 {
 	unsigned long r;
 
-	if (dss_get_dsi_clk_source() == DSS_SRC_DSS1_ALWON_FCLK) {
-		/* DSI FCLK source is DSS1_ALWON_FCK, which is dss1_fck */
-		r = dss_clk_get_rate(DSS_CLK_FCK1);
+	if (dss_get_dsi_clk_source() == DSS_CLK_SRC_FCK) {
+		/* DSI FCLK source is DSS_CLK_FCK */
+		r = dss_clk_get_rate(DSS_CLK_FCK);
 	} else {
-		/* DSI FCLK source is DSI2_PLL_FCLK */
-		r = dsi_get_dsi2_pll_rate();
+		/* DSI FCLK source is dsi_pll_hsdiv_dsi_clk */
+		r = dsi_get_pll_hsdiv_dsi_rate();
 	}
 
 	return r;
@@ -801,16 +807,16 @@ static int dsi_calc_clock_rates(struct omap_dss_device *dssdev,
 	if (cinfo->regm == 0 || cinfo->regm > REGM_MAX)
 		return -EINVAL;
 
-	if (cinfo->regm3 > REGM3_MAX)
+	if (cinfo->regm_dispc > REGM_DISPC_MAX)
 		return -EINVAL;
 
-	if (cinfo->regm4 > REGM4_MAX)
+	if (cinfo->regm_dsi > REGM_DSI_MAX)
 		return -EINVAL;
 
-	if (cinfo->use_dss2_fck) {
-		cinfo->clkin = dss_clk_get_rate(DSS_CLK_FCK2);
+	if (cinfo->use_sys_clk) {
+		cinfo->clkin = dss_clk_get_rate(DSS_CLK_SYSCK);
 		/* XXX it is unclear if highfreq should be used
-		 * with DSS2_FCK source also */
+		 * with DSS_SYS_CLK source also */
 		cinfo->highfreq = 0;
 	} else {
 		cinfo->clkin = dispc_pclk_rate(dssdev->manager->id);
@@ -831,15 +837,17 @@ static int dsi_calc_clock_rates(struct omap_dss_device *dssdev,
 	if (cinfo->clkin4ddr > 1800 * 1000 * 1000)
 		return -EINVAL;
 
-	if (cinfo->regm3 > 0)
-		cinfo->dsi1_pll_fclk = cinfo->clkin4ddr / cinfo->regm3;
+	if (cinfo->regm_dispc > 0)
+		cinfo->dsi_pll_hsdiv_dispc_clk =
+			cinfo->clkin4ddr / cinfo->regm_dispc;
 	else
-		cinfo->dsi1_pll_fclk = 0;
+		cinfo->dsi_pll_hsdiv_dispc_clk = 0;
 
-	if (cinfo->regm4 > 0)
-		cinfo->dsi2_pll_fclk = cinfo->clkin4ddr / cinfo->regm4;
+	if (cinfo->regm_dsi > 0)
+		cinfo->dsi_pll_hsdiv_dsi_clk =
+			cinfo->clkin4ddr / cinfo->regm_dsi;
 	else
-		cinfo->dsi2_pll_fclk = 0;
+		cinfo->dsi_pll_hsdiv_dsi_clk = 0;
 
 	return 0;
 }
@@ -852,23 +860,25 @@ int dsi_pll_calc_clock_div_pck(bool is_tft, unsigned long req_pck,
 	struct dispc_clock_info best_dispc;
 	int min_fck_per_pck;
 	int match = 0;
-	unsigned long dss_clk_fck2;
+	unsigned long dss_sys_clk, max_dss_fck;
 
-	dss_clk_fck2 = dss_clk_get_rate(DSS_CLK_FCK2);
+	dss_sys_clk = dss_clk_get_rate(DSS_CLK_SYSCK);
+
+	max_dss_fck = dss_feat_get_max_dss_fck();
 
 	if (req_pck == dsi.cache_req_pck &&
-			dsi.cache_cinfo.clkin == dss_clk_fck2) {
+			dsi.cache_cinfo.clkin == dss_sys_clk) {
 		DSSDBG("DSI clock info found from cache\n");
 		*dsi_cinfo = dsi.cache_cinfo;
-		dispc_find_clk_divs(is_tft, req_pck, dsi_cinfo->dsi1_pll_fclk,
-				dispc_cinfo);
+		dispc_find_clk_divs(is_tft, req_pck,
+			dsi_cinfo->dsi_pll_hsdiv_dispc_clk, dispc_cinfo);
 		return 0;
 	}
 
 	min_fck_per_pck = CONFIG_OMAP2_DSS_MIN_FCK_PER_PCK;
 
 	if (min_fck_per_pck &&
-		req_pck * min_fck_per_pck > DISPC_MAX_FCK) {
+		req_pck * min_fck_per_pck > max_dss_fck) {
 		DSSERR("Requested pixel clock not possible with the current "
 				"OMAP2_DSS_MIN_FCK_PER_PCK setting. Turning "
 				"the constraint off.\n");
@@ -882,8 +892,8 @@ retry:
 	memset(&best_dispc, 0, sizeof(best_dispc));
 
 	memset(&cur, 0, sizeof(cur));
-	cur.clkin = dss_clk_fck2;
-	cur.use_dss2_fck = 1;
+	cur.clkin = dss_sys_clk;
+	cur.use_sys_clk = 1;
 	cur.highfreq = 0;
 
 	/* no highfreq: 0.75MHz < Fint = clkin / regn < 2.1MHz */
@@ -909,30 +919,32 @@ retry:
 			if (cur.clkin4ddr > 1800 * 1000 * 1000)
 				break;
 
-			/* DSI1_PLL_FCLK(MHz) = DSIPHY(MHz) / regm3  < 173MHz */
-			for (cur.regm3 = 1; cur.regm3 < REGM3_MAX;
-					++cur.regm3) {
+			/* dsi_pll_hsdiv_dispc_clk(MHz) =
+			 * DSIPHY(MHz) / regm_dispc  < 173MHz/186Mhz */
+			for (cur.regm_dispc = 1; cur.regm_dispc < REGM_DISPC_MAX;
+					++cur.regm_dispc) {
 				struct dispc_clock_info cur_dispc;
-				cur.dsi1_pll_fclk = cur.clkin4ddr / cur.regm3;
+				cur.dsi_pll_hsdiv_dispc_clk =
+					cur.clkin4ddr / cur.regm_dispc;
 
 				/* this will narrow down the search a bit,
 				 * but still give pixclocks below what was
 				 * requested */
-				if (cur.dsi1_pll_fclk  < req_pck)
+				if (cur.dsi_pll_hsdiv_dispc_clk  < req_pck)
 					break;
 
-				if (cur.dsi1_pll_fclk > DISPC_MAX_FCK)
+				if (cur.dsi_pll_hsdiv_dispc_clk > max_dss_fck)
 					continue;
 
 				if (min_fck_per_pck &&
-					cur.dsi1_pll_fclk <
+					cur.dsi_pll_hsdiv_dispc_clk <
 						req_pck * min_fck_per_pck)
 					continue;
 
 				match = 1;
 
 				dispc_find_clk_divs(is_tft, req_pck,
-						cur.dsi1_pll_fclk,
+						cur.dsi_pll_hsdiv_dispc_clk,
 						&cur_dispc);
 
 				if (abs(cur_dispc.pck - req_pck) <
@@ -961,9 +973,9 @@ found:
 		return -EINVAL;
 	}
 
-	/* DSI2_PLL_FCLK (regm4) is not used */
-	best.regm4 = 0;
-	best.dsi2_pll_fclk = 0;
+	/* dsi_pll_hsdiv_dsi_clk (regm_dsi) is not used */
+	best.regm_dsi = 0;
+	best.dsi_pll_hsdiv_dsi_clk = 0;
 
 	if (dsi_cinfo)
 		*dsi_cinfo = best;
@@ -987,18 +999,20 @@ int dsi_pll_set_clock_div(struct dsi_clock_info *cinfo)
 
 	dsi.current_cinfo.fint = cinfo->fint;
 	dsi.current_cinfo.clkin4ddr = cinfo->clkin4ddr;
-	dsi.current_cinfo.dsi1_pll_fclk = cinfo->dsi1_pll_fclk;
-	dsi.current_cinfo.dsi2_pll_fclk = cinfo->dsi2_pll_fclk;
+	dsi.current_cinfo.dsi_pll_hsdiv_dispc_clk =
+			cinfo->dsi_pll_hsdiv_dispc_clk;
+	dsi.current_cinfo.dsi_pll_hsdiv_dsi_clk =
+			cinfo->dsi_pll_hsdiv_dsi_clk;
 
 	dsi.current_cinfo.regn = cinfo->regn;
 	dsi.current_cinfo.regm = cinfo->regm;
-	dsi.current_cinfo.regm3 = cinfo->regm3;
-	dsi.current_cinfo.regm4 = cinfo->regm4;
+	dsi.current_cinfo.regm_dispc = cinfo->regm_dispc;
+	dsi.current_cinfo.regm_dsi = cinfo->regm_dsi;
 
 	DSSDBG("DSI Fint %ld\n", cinfo->fint);
 
 	DSSDBG("clkin (%s) rate %ld, highfreq %d\n",
-			cinfo->use_dss2_fck ? "dss2_fck" : "pclkfree",
+			cinfo->use_sys_clk ? "dss_sys_clk" : "pclkfree",
 			cinfo->clkin,
 			cinfo->highfreq);
 
@@ -1015,10 +1029,14 @@ int dsi_pll_set_clock_div(struct dsi_clock_info *cinfo)
 
 	DSSDBG("Clock lane freq %ld Hz\n", cinfo->clkin4ddr / 4);
 
-	DSSDBG("regm3 = %d, dsi1_pll_fclk = %lu\n",
-			cinfo->regm3, cinfo->dsi1_pll_fclk);
-	DSSDBG("regm4 = %d, dsi2_pll_fclk = %lu\n",
-			cinfo->regm4, cinfo->dsi2_pll_fclk);
+	DSSDBG("regm_dispc = %d, %s (%s) = %lu\n", cinfo->regm_dispc,
+		dss_get_generic_clk_source_name(DSS_CLK_SRC_DSI_PLL_HSDIV_DISPC),
+		dss_feat_get_clk_source_name(DSS_CLK_SRC_DSI_PLL_HSDIV_DISPC),
+		cinfo->dsi_pll_hsdiv_dispc_clk);
+	DSSDBG("regm_dsi = %d, %s (%s) = %lu\n", cinfo->regm_dsi,
+		dss_get_generic_clk_source_name(DSS_CLK_SRC_DSI_PLL_HSDIV_DSI),
+		dss_feat_get_clk_source_name(DSS_CLK_SRC_DSI_PLL_HSDIV_DSI),
+		cinfo->dsi_pll_hsdiv_dsi_clk);
 
 	REG_FLD_MOD(DSI_PLL_CONTROL, 0, 0, 0); /* DSI_PLL_AUTOMODE = manual */
 
@@ -1026,9 +1044,9 @@ int dsi_pll_set_clock_div(struct dsi_clock_info *cinfo)
 	l = FLD_MOD(l, 1, 0, 0);		/* DSI_PLL_STOPMODE */
 	l = FLD_MOD(l, cinfo->regn - 1, 7, 1);	/* DSI_PLL_REGN */
 	l = FLD_MOD(l, cinfo->regm, 18, 8);	/* DSI_PLL_REGM */
-	l = FLD_MOD(l, cinfo->regm3 > 0 ? cinfo->regm3 - 1 : 0,
+	l = FLD_MOD(l, cinfo->regm_dispc > 0 ? cinfo->regm_dispc - 1 : 0,
 			22, 19);		/* DSI_CLOCK_DIV */
-	l = FLD_MOD(l, cinfo->regm4 > 0 ? cinfo->regm4 - 1 : 0,
+	l = FLD_MOD(l, cinfo->regm_dsi > 0 ? cinfo->regm_dsi - 1 : 0,
 			26, 23);		/* DSIPROTO_CLOCK_DIV */
 	dsi_write_reg(DSI_PLL_CONFIGURATION1, l);
 
@@ -1046,7 +1064,7 @@ int dsi_pll_set_clock_div(struct dsi_clock_info *cinfo)
 
 	l = dsi_read_reg(DSI_PLL_CONFIGURATION2);
 	l = FLD_MOD(l, f, 4, 1);		/* DSI_PLL_FREQSEL */
-	l = FLD_MOD(l, cinfo->use_dss2_fck ? 0 : 1,
+	l = FLD_MOD(l, cinfo->use_sys_clk ? 0 : 1,
 			11, 11);		/* DSI_PLL_CLKSEL */
 	l = FLD_MOD(l, cinfo->highfreq,
 			12, 12);		/* DSI_PLL_HIGHFREQ */
@@ -1100,6 +1118,26 @@ int dsi_pll_init(struct omap_dss_device *dssdev, bool enable_hsclk,
 	enum dsi_pll_power_state pwstate;
 
 	DSSDBG("PLL init\n");
+
+#ifdef CONFIG_OMAP2_DSS_USE_DSI_PLL
+	/*
+	 * HACK: this is just a quick hack to get the USE_DSI_PLL
+	 * option working. USE_DSI_PLL is itself a big hack, and
+	 * should be removed.
+	 */
+	if (dsi.vdds_dsi_reg == NULL) {
+		struct regulator *vdds_dsi;
+
+		vdds_dsi = regulator_get(&dsi.pdev->dev, "vdds_dsi");
+
+		if (IS_ERR(vdds_dsi)) {
+			DSSERR("can't get VDDS_DSI regulator\n");
+			return PTR_ERR(vdds_dsi);
+		}
+
+		dsi.vdds_dsi_reg = vdds_dsi;
+	}
+#endif
 
 	enable_clocks(1);
 	dsi_enable_pll_clock(1);
@@ -1162,6 +1200,10 @@ void dsi_dump_clocks(struct seq_file *s)
 {
 	int clksel;
 	struct dsi_clock_info *cinfo = &dsi.current_cinfo;
+	enum dss_clk_source dispc_clk_src, dsi_clk_src;
+
+	dispc_clk_src = dss_get_dispc_clk_source();
+	dsi_clk_src = dss_get_dsi_clk_source();
 
 	enable_clocks(1);
 
@@ -1171,30 +1213,34 @@ void dsi_dump_clocks(struct seq_file *s)
 
 	seq_printf(s,	"dsi pll source = %s\n",
 			clksel == 0 ?
-			"dss2_alwon_fclk" : "pclkfree");
+			"dss_sys_clk" : "pclkfree");
 
 	seq_printf(s,	"Fint\t\t%-16luregn %u\n", cinfo->fint, cinfo->regn);
 
 	seq_printf(s,	"CLKIN4DDR\t%-16luregm %u\n",
 			cinfo->clkin4ddr, cinfo->regm);
 
-	seq_printf(s,	"dsi1_pll_fck\t%-16luregm3 %u\t(%s)\n",
-			cinfo->dsi1_pll_fclk,
-			cinfo->regm3,
-			dss_get_dispc_clk_source() == DSS_SRC_DSS1_ALWON_FCLK ?
+	seq_printf(s,	"%s (%s)\t%-16luregm_dispc %u\t(%s)\n",
+			dss_get_generic_clk_source_name(dispc_clk_src),
+			dss_feat_get_clk_source_name(dispc_clk_src),
+			cinfo->dsi_pll_hsdiv_dispc_clk,
+			cinfo->regm_dispc,
+			dispc_clk_src == DSS_CLK_SRC_FCK ?
 			"off" : "on");
 
-	seq_printf(s,	"dsi2_pll_fck\t%-16luregm4 %u\t(%s)\n",
-			cinfo->dsi2_pll_fclk,
-			cinfo->regm4,
-			dss_get_dsi_clk_source() == DSS_SRC_DSS1_ALWON_FCLK ?
+	seq_printf(s,	"%s (%s)\t%-16luregm_dsi %u\t(%s)\n",
+			dss_get_generic_clk_source_name(dsi_clk_src),
+			dss_feat_get_clk_source_name(dsi_clk_src),
+			cinfo->dsi_pll_hsdiv_dsi_clk,
+			cinfo->regm_dsi,
+			dsi_clk_src == DSS_CLK_SRC_FCK ?
 			"off" : "on");
 
 	seq_printf(s,	"- DSI -\n");
 
-	seq_printf(s,	"dsi fclk source = %s\n",
-			dss_get_dsi_clk_source() == DSS_SRC_DSS1_ALWON_FCLK ?
-			"dss1_alwon_fclk" : "dsi2_pll_fclk");
+	seq_printf(s,	"dsi fclk source = %s (%s)\n",
+			dss_get_generic_clk_source_name(dsi_clk_src),
+			dss_feat_get_clk_source_name(dsi_clk_src));
 
 	seq_printf(s,	"DSI_FCLK\t%lu\n", dsi_fclk_rate());
 
@@ -1306,7 +1352,7 @@ void dsi_dump_regs(struct seq_file *s)
 {
 #define DUMPREG(r) seq_printf(s, "%-35s %08x\n", #r, dsi_read_reg(r))
 
-	dss_clk_enable(DSS_CLK_ICK | DSS_CLK_FCK1);
+	dss_clk_enable(DSS_CLK_ICK | DSS_CLK_FCK);
 
 	DUMPREG(DSI_REVISION);
 	DUMPREG(DSI_SYSCONFIG);
@@ -1378,7 +1424,7 @@ void dsi_dump_regs(struct seq_file *s)
 	DUMPREG(DSI_PLL_CONFIGURATION1);
 	DUMPREG(DSI_PLL_CONFIGURATION2);
 
-	dss_clk_disable(DSS_CLK_ICK | DSS_CLK_FCK1);
+	dss_clk_disable(DSS_CLK_ICK | DSS_CLK_FCK);
 #undef DUMPREG
 }
 
@@ -1622,20 +1668,6 @@ static int _dsi_reset(void)
 	return _dsi_wait_reset();
 }
 
-static void dsi_reset_tx_fifo(int channel)
-{
-	u32 mask;
-	u32 l;
-
-	/* set fifosize of the channel to 0, then return the old size */
-	l = dsi_read_reg(DSI_TX_FIFO_VC_SIZE);
-
-	mask = FLD_MASK((8 * channel) + 7, (8 * channel) + 4);
-	dsi_write_reg(DSI_TX_FIFO_VC_SIZE, l & ~mask);
-
-	dsi_write_reg(DSI_TX_FIFO_VC_SIZE, l);
-}
-
 static void dsi_config_tx_fifo(enum fifo_size size1, enum fifo_size size2,
 		enum fifo_size size3, enum fifo_size size4)
 {
@@ -1753,8 +1785,6 @@ static void dsi_vc_initial_config(int channel)
 	r = FLD_MOD(r, 4, 23, 21); /* DMA_TX_REQ_NB = no dma */
 
 	dsi_write_reg(DSI_VC_CTRL(channel), r);
-
-	dsi.vc[channel].mode = DSI_VC_MODE_L4;
 }
 
 static int dsi_vc_config_l4(int channel)
@@ -1961,7 +1991,7 @@ static inline void dsi_vc_write_long_header(int channel, u8 data_type,
 
 	WARN_ON(!dsi_bus_is_locked());
 
-	data_id = data_type | channel << 6;
+	data_id = data_type | dsi.vc[channel].vc_id << 6;
 
 	val = FLD_VAL(data_id, 7, 0) | FLD_VAL(len, 23, 8) |
 		FLD_VAL(ecc, 31, 24);
@@ -2064,7 +2094,7 @@ static int dsi_vc_send_short(int channel, u8 data_type, u16 data, u8 ecc)
 		return -EINVAL;
 	}
 
-	data_id = data_type | channel << 6;
+	data_id = data_type | dsi.vc[channel].vc_id << 6;
 
 	r = (data_id << 0) | (data << 8) | (ecc << 24);
 
@@ -2984,12 +3014,12 @@ static int dsi_configure_dsi_clocks(struct omap_dss_device *dssdev)
 	struct dsi_clock_info cinfo;
 	int r;
 
-	/* we always use DSS2_FCK as input clock */
-	cinfo.use_dss2_fck = true;
+	/* we always use DSS_CLK_SYSCK as input clock */
+	cinfo.use_sys_clk = true;
 	cinfo.regn  = dssdev->phy.dsi.div.regn;
 	cinfo.regm  = dssdev->phy.dsi.div.regm;
-	cinfo.regm3 = dssdev->phy.dsi.div.regm3;
-	cinfo.regm4 = dssdev->phy.dsi.div.regm4;
+	cinfo.regm_dispc = dssdev->phy.dsi.div.regm_dispc;
+	cinfo.regm_dsi = dssdev->phy.dsi.div.regm_dsi;
 	r = dsi_calc_clock_rates(dssdev, &cinfo);
 	if (r) {
 		DSSERR("Failed to calc dsi clocks\n");
@@ -3011,7 +3041,7 @@ static int dsi_configure_dispc_clocks(struct omap_dss_device *dssdev)
 	int r;
 	unsigned long long fck;
 
-	fck = dsi_get_dsi1_pll_rate();
+	fck = dsi_get_pll_hsdiv_dispc_rate();
 
 	dispc_cinfo.lck_div = dssdev->phy.dsi.div.lck_div;
 	dispc_cinfo.pck_div = dssdev->phy.dsi.div.pck_div;
@@ -3045,8 +3075,8 @@ static int dsi_display_init_dsi(struct omap_dss_device *dssdev)
 	if (r)
 		goto err1;
 
-	dss_select_dispc_clk_source(DSS_SRC_DSI1_PLL_FCLK);
-	dss_select_dsi_clk_source(DSS_SRC_DSI2_PLL_FCLK);
+	dss_select_dispc_clk_source(DSS_CLK_SRC_DSI_PLL_HSDIV_DISPC);
+	dss_select_dsi_clk_source(DSS_CLK_SRC_DSI_PLL_HSDIV_DSI);
 
 	DSSDBG("PLL OK\n");
 
@@ -3082,8 +3112,8 @@ static int dsi_display_init_dsi(struct omap_dss_device *dssdev)
 err3:
 	dsi_complexio_uninit();
 err2:
-	dss_select_dispc_clk_source(DSS_SRC_DSS1_ALWON_FCLK);
-	dss_select_dsi_clk_source(DSS_SRC_DSS1_ALWON_FCLK);
+	dss_select_dispc_clk_source(DSS_CLK_SRC_FCK);
+	dss_select_dsi_clk_source(DSS_CLK_SRC_FCK);
 err1:
 	dsi_pll_uninit();
 err0:
@@ -3099,8 +3129,8 @@ static void dsi_display_uninit_dsi(struct omap_dss_device *dssdev)
 	dsi_vc_enable(2, 0);
 	dsi_vc_enable(3, 0);
 
-	dss_select_dispc_clk_source(DSS_SRC_DSS1_ALWON_FCLK);
-	dss_select_dsi_clk_source(DSS_SRC_DSS1_ALWON_FCLK);
+	dss_select_dispc_clk_source(DSS_CLK_SRC_FCK);
+	dss_select_dsi_clk_source(DSS_CLK_SRC_FCK);
 	dsi_complexio_uninit();
 	dsi_pll_uninit();
 }
@@ -3220,28 +3250,94 @@ int dsi_init_display(struct omap_dss_device *dssdev)
 	dssdev->caps = OMAP_DSS_DISPLAY_CAP_MANUAL_UPDATE |
 		OMAP_DSS_DISPLAY_CAP_TEAR_ELIM;
 
-	dsi.vc[0].dssdev = dssdev;
-	dsi.vc[1].dssdev = dssdev;
+	if (dsi.vdds_dsi_reg == NULL) {
+		struct regulator *vdds_dsi;
+
+		vdds_dsi = regulator_get(&dsi.pdev->dev, "vdds_dsi");
+
+		if (IS_ERR(vdds_dsi)) {
+			DSSERR("can't get VDDS_DSI regulator\n");
+			return PTR_ERR(vdds_dsi);
+		}
+
+		dsi.vdds_dsi_reg = vdds_dsi;
+	}
 
 	return 0;
 }
 
-void dsi_wait_dsi1_pll_active(void)
+int omap_dsi_request_vc(struct omap_dss_device *dssdev, int *channel)
+{
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(dsi.vc); i++) {
+		if (!dsi.vc[i].dssdev) {
+			dsi.vc[i].dssdev = dssdev;
+			*channel = i;
+			return 0;
+		}
+	}
+
+	DSSERR("cannot get VC for display %s", dssdev->name);
+	return -ENOSPC;
+}
+EXPORT_SYMBOL(omap_dsi_request_vc);
+
+int omap_dsi_set_vc_id(struct omap_dss_device *dssdev, int channel, int vc_id)
+{
+	if (vc_id < 0 || vc_id > 3) {
+		DSSERR("VC ID out of range\n");
+		return -EINVAL;
+	}
+
+	if (channel < 0 || channel > 3) {
+		DSSERR("Virtual Channel out of range\n");
+		return -EINVAL;
+	}
+
+	if (dsi.vc[channel].dssdev != dssdev) {
+		DSSERR("Virtual Channel not allocated to display %s\n",
+			dssdev->name);
+		return -EINVAL;
+	}
+
+	dsi.vc[channel].vc_id = vc_id;
+
+	return 0;
+}
+EXPORT_SYMBOL(omap_dsi_set_vc_id);
+
+void omap_dsi_release_vc(struct omap_dss_device *dssdev, int channel)
+{
+	if ((channel >= 0 && channel <= 3) &&
+		dsi.vc[channel].dssdev == dssdev) {
+		dsi.vc[channel].dssdev = NULL;
+		dsi.vc[channel].vc_id = 0;
+	}
+}
+EXPORT_SYMBOL(omap_dsi_release_vc);
+
+void dsi_wait_pll_hsdiv_dispc_active(void)
 {
 	if (wait_for_bit_change(DSI_PLL_STATUS, 7, 1) != 1)
-		DSSERR("DSI1 PLL clock not active\n");
+		DSSERR("%s (%s) not active\n",
+			dss_get_generic_clk_source_name(DSS_CLK_SRC_DSI_PLL_HSDIV_DISPC),
+			dss_feat_get_clk_source_name(DSS_CLK_SRC_DSI_PLL_HSDIV_DISPC));
 }
 
-void dsi_wait_dsi2_pll_active(void)
+void dsi_wait_pll_hsdiv_dsi_active(void)
 {
 	if (wait_for_bit_change(DSI_PLL_STATUS, 8, 1) != 1)
-		DSSERR("DSI2 PLL clock not active\n");
+		DSSERR("%s (%s) not active\n",
+			dss_get_generic_clk_source_name(DSS_CLK_SRC_DSI_PLL_HSDIV_DSI),
+			dss_feat_get_clk_source_name(DSS_CLK_SRC_DSI_PLL_HSDIV_DSI));
 }
 
-int dsi_init(struct platform_device *pdev)
+static int dsi_init(struct platform_device *pdev)
 {
 	u32 rev;
-	int r;
+	int r, i;
+	struct resource *dsi_mem;
 
 	spin_lock_init(&dsi.errors_lock);
 	dsi.errors = 0;
@@ -3268,24 +3364,43 @@ int dsi_init(struct platform_device *pdev)
 	dsi.te_timer.function = dsi_te_timeout;
 	dsi.te_timer.data = 0;
 #endif
-	dsi.base = ioremap(DSI_BASE, DSI_SZ_REGS);
+	dsi_mem = platform_get_resource(dsi.pdev, IORESOURCE_MEM, 0);
+	if (!dsi_mem) {
+		DSSERR("can't get IORESOURCE_MEM DSI\n");
+		r = -EINVAL;
+		goto err1;
+	}
+	dsi.base = ioremap(dsi_mem->start, resource_size(dsi_mem));
 	if (!dsi.base) {
 		DSSERR("can't ioremap DSI\n");
 		r = -ENOMEM;
 		goto err1;
 	}
-
-	dsi.vdds_dsi_reg = dss_get_vdds_dsi();
-	if (IS_ERR(dsi.vdds_dsi_reg)) {
-		DSSERR("can't get VDDS_DSI regulator\n");
-		r = PTR_ERR(dsi.vdds_dsi_reg);
+	dsi.irq	= platform_get_irq(dsi.pdev, 0);
+	if (dsi.irq < 0) {
+		DSSERR("platform_get_irq failed\n");
+		r = -ENODEV;
 		goto err2;
+	}
+
+	r = request_irq(dsi.irq, omap_dsi_irq_handler, IRQF_SHARED,
+		"OMAP DSI1", dsi.pdev);
+	if (r < 0) {
+		DSSERR("request_irq failed\n");
+		goto err2;
+	}
+
+	/* DSI VCs initialization */
+	for (i = 0; i < ARRAY_SIZE(dsi.vc); i++) {
+		dsi.vc[i].mode = DSI_VC_MODE_L4;
+		dsi.vc[i].dssdev = NULL;
+		dsi.vc[i].vc_id = 0;
 	}
 
 	enable_clocks(1);
 
 	rev = dsi_read_reg(DSI_REVISION);
-	printk(KERN_INFO "OMAP DSI rev %d.%d\n",
+	dev_dbg(&pdev->dev, "OMAP DSI rev %d.%d\n",
 	       FLD_GET(rev, 7, 4), FLD_GET(rev, 3, 0));
 
 	enable_clocks(0);
@@ -3298,8 +3413,14 @@ err1:
 	return r;
 }
 
-void dsi_exit(void)
+static void dsi_exit(void)
 {
+	if (dsi.vdds_dsi_reg != NULL) {
+		regulator_put(dsi.vdds_dsi_reg);
+		dsi.vdds_dsi_reg = NULL;
+	}
+
+	free_irq(dsi.irq, dsi.pdev);
 	iounmap(dsi.base);
 
 	destroy_workqueue(dsi.workqueue);
@@ -3307,3 +3428,41 @@ void dsi_exit(void)
 	DSSDBG("omap_dsi_exit\n");
 }
 
+/* DSI1 HW IP initialisation */
+static int omap_dsi1hw_probe(struct platform_device *pdev)
+{
+	int r;
+	dsi.pdev = pdev;
+	r = dsi_init(pdev);
+	if (r) {
+		DSSERR("Failed to initialize DSI\n");
+		goto err_dsi;
+	}
+err_dsi:
+	return r;
+}
+
+static int omap_dsi1hw_remove(struct platform_device *pdev)
+{
+	dsi_exit();
+	return 0;
+}
+
+static struct platform_driver omap_dsi1hw_driver = {
+	.probe          = omap_dsi1hw_probe,
+	.remove         = omap_dsi1hw_remove,
+	.driver         = {
+		.name   = "omapdss_dsi1",
+		.owner  = THIS_MODULE,
+	},
+};
+
+int dsi_init_platform_driver(void)
+{
+	return platform_driver_register(&omap_dsi1hw_driver);
+}
+
+void dsi_uninit_platform_driver(void)
+{
+	return platform_driver_unregister(&omap_dsi1hw_driver);
+}
