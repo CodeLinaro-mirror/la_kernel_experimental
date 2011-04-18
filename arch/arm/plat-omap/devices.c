@@ -93,7 +93,7 @@ static struct resource mcpdm_resources[] = {
 };
 
 static struct platform_device omap_mcpdm_device = {
-	.name		= "omap-mcpdm",
+	.name		= "omap-mcpdm-dai",
 	.id		= -1,
 	.num_resources	= ARRAY_SIZE(mcpdm_resources),
 	.resource	= mcpdm_resources,

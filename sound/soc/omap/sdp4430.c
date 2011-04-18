@@ -521,7 +521,7 @@ static struct snd_soc_dai_link sdp4430_dai[] = {
 /*
  * Frontend DAIs - i.e. userspace visible interfaces (ALSA PCMs)
  */
-
+#if 0
 	{
 		.name = "SDP4430 Media",
 		.stream_name = "Multimedia",
@@ -602,6 +602,7 @@ static struct snd_soc_dai_link sdp4430_dai[] = {
 		.dynamic = 1, /* BE is dynamic */
 		.dsp_link = &fe_lp_media,
 	},
+#endif
 #ifdef CONFIG_SND_OMAP_SOC_HDMI
 	{
 		.name = "hdmi",
@@ -644,6 +645,7 @@ static struct snd_soc_dai_link sdp4430_dai[] = {
 
 		.ops = &sdp4430_mcpdm_ops,
 	},
+#if 0
 	{
 		.name = "Legacy DMIC",
 		.stream_name = "DMIC Capture",
@@ -658,12 +660,12 @@ static struct snd_soc_dai_link sdp4430_dai[] = {
 
 		.ops = &sdp4430_dmic_ops,
 	},
-
+#endif
 /*
  * Backend DAIs - i.e. dynamically matched interfaces, invisible to userspace.
  * Matched to above interfaces at runtime, based upon use case.
  */
-
+#if 0
 	{
 		.name = OMAP_ABE_BE_PDM_DL1,
 		.stream_name = "HS Playback",
@@ -832,6 +834,7 @@ static struct snd_soc_dai_link sdp4430_dai[] = {
 		.be_hw_params_fixup = dmic_be_hw_params_fixup,
 		.be_id = OMAP_ABE_DAI_DMIC2,
 	},
+#endif
 };
 
 /* Audio machine driver */

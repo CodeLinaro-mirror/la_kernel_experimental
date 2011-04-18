@@ -845,7 +845,7 @@ int omap_mcbsp_request(unsigned int id)
 			goto err_clk_disable;
 		}
 
-		if (mcbsp->rx_irq) {
+		if (mcbsp->rx_irq > 0) {
 			init_completion(&mcbsp->rx_irq_completion);
 			err = request_irq(mcbsp->rx_irq,
 					omap_mcbsp_rx_irq_handler,
